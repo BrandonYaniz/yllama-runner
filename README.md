@@ -29,6 +29,29 @@ It is not a daemon and does not listen on a socket. It reads JSON Lines from std
 
 `yllama-runner` only owns local model execution.
 
+## Build
+
+Requirements:
+
+- CMake 3.16 or newer
+- C++17 compiler
+
+Build and run the initial smoke test:
+
+```sh
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build
+```
+
+Install:
+
+```sh
+cmake --install build
+```
+
+The real llama.cpp backend is not enabled yet. The current target is a build skeleton for the runner executable and test setup.
+
 ## License
 
 BSD 3-Clause License.

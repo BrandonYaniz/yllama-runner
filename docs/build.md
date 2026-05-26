@@ -6,14 +6,15 @@
 
 - C++17 or newer compiler
 - CMake
-- llama.cpp source or linked library
-- nlohmann/json or compatible JSON library
+
+The initial build skeleton does not require llama.cpp or nlohmann/json yet. Those dependencies will be introduced behind explicit CMake options as the backend and protocol layers are added.
 
 ## Build
 
 ```sh
 cmake -S . -B build
 cmake --build build
+ctest --test-dir build
 ```
 
 ## Install
