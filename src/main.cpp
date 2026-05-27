@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string_view>
 
+#include "protocol.hpp"
+
 namespace {
 
 constexpr std::string_view kVersion = "0.1.0";
@@ -30,6 +32,7 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  std::cerr << "runner protocol is not implemented yet\n";
+  yllama::write_json_line(std::cout, yllama::hello_event());
+  std::cerr << "command loop is not implemented yet\n";
   return 1;
 }

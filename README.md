@@ -52,6 +52,10 @@ cmake --install build
 
 The real llama.cpp backend is not enabled yet. The current target is a build skeleton for the runner executable and test setup.
 
+## Current status
+
+The runner can print its version and emit the startup `hello` event. Command parsing, model loading, and generation are still in progress.
+
 ## License
 
 BSD 3-Clause License.
