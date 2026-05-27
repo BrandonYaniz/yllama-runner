@@ -12,6 +12,7 @@ option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
 
 add_library(yllama_protocol
+  src/jsonl.cpp
   src/protocol.cpp
 )
 
@@ -66,5 +67,22 @@ if(YLLAMA_BUILD_TESTS)
   add_test(
     NAME protocol-events
     COMMAND protocol_test
+  )
+
+  add_executable(jsonl_test
+    tests/jsonl_test.cpp
+  )
+
+  target_link_libraries(jsonl_test PRIVATE yllama_protocol)
+
+  if(MSVC)
+    target_compile_options(jsonl_test PRIVATE /W4)
+  else()
+    target_compile_options(jsonl_test PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+
+  add_test(
+    NAME jsonl-commands
+    COMMAND jsonl_test
   )
 endif()

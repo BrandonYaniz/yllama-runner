@@ -54,7 +54,7 @@ The real llama.cpp backend is not enabled yet. The current target is a build ske
 
 ## Current status
 
-The runner can print its version and emit the startup `hello` event. Command parsing, model loading, and generation are still in progress.
+The runner can print its version, emit the startup `hello` event, and parse the initial command set. The command loop, model loading, and generation are still in progress.
 
 ## License
 
