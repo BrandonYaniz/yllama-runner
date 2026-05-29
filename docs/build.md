@@ -17,10 +17,12 @@ cmake --build build
 ctest --test-dir build
 ```
 
+This path is currently verified on macOS with Apple clang. FreeBSD and Linux verification are planned before the beta build.
+
 ## Install
 
 ```sh
-install -m 0755 build/yllama-runner /usr/local/libexec/yllama-runner
+cmake --install build
 ```
 
 ## Runtime behavior

@@ -44,6 +44,8 @@ cmake --build build
 ctest --test-dir build
 ```
 
+The CMake build and test path is currently verified on macOS with Apple clang.
+
 Install:
 
 ```sh
