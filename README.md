@@ -56,7 +56,7 @@ The real llama.cpp backend is not enabled yet. The current target is a build ske
 
 ## Current status
 
-The runner can print its version, emit the startup `hello` event, parse the initial command set, and run the stdio command loop with a fake generation response. Model loading and real generation are still in progress.
+The runner can print its version, emit the startup `hello` event, parse the initial command set, and run the stdio command loop through a backend interface. The current backend is fake; model loading and real generation are still in progress.
 
 ## License
 
