@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string_view>
 
-#include "protocol.hpp"
+#include "runner.hpp"
 
 namespace {
 
@@ -32,7 +32,5 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  yllama::write_json_line(std::cout, yllama::hello_event());
-  std::cerr << "command loop is not implemented yet\n";
-  return 1;
+  return yllama::run_stdio(std::cin, std::cout, std::cerr);
 }

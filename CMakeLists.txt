@@ -14,6 +14,7 @@ option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
 add_library(yllama_protocol
   src/jsonl.cpp
   src/protocol.cpp
+  src/runner.cpp
 )
 
 target_include_directories(yllama_protocol PUBLIC
@@ -84,5 +85,22 @@ if(YLLAMA_BUILD_TESTS)
   add_test(
     NAME jsonl-commands
     COMMAND jsonl_test
+  )
+
+  add_executable(runner_test
+    tests/runner_test.cpp
+  )
+
+  target_link_libraries(runner_test PRIVATE yllama_protocol)
+
+  if(MSVC)
+    target_compile_options(runner_test PRIVATE /W4)
+  else()
+    target_compile_options(runner_test PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+
+  add_test(
+    NAME runner-loop
+    COMMAND runner_test
   )
 endif()
