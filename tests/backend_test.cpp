@@ -29,7 +29,7 @@ int main() {
     assert(!result.error.has_value());
     assert(delta == "fake response");
     assert(result.finish_reason == "stop");
-    assert(result.usage.input_tokens == 0);
+    assert(result.usage.input_tokens == 1);
     assert(result.usage.output_tokens == 2);
   }
 

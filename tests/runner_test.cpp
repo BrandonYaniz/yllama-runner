@@ -57,7 +57,7 @@ int main() {
            "{\"type\":\"delta\",\"id\":\"req-001\",\"text\":\"fake response\"}\n"
            "{\"type\":\"completed\",\"id\":\"req-001\","
            "\"finish_reason\":\"stop\","
-           "\"usage\":{\"input_tokens\":0,\"output_tokens\":2}}\n");
+           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}\n");
   }
 
   {

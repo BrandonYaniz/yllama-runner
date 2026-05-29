@@ -1,7 +1,29 @@
 #include "backend.hpp"
 
+#include <cctype>
+
+#include "prompt.hpp"
+
 namespace yllama {
 namespace {
+
+int count_input_tokens(std::string_view prompt) {
+  int tokens = 0;
+  bool in_token = false;
+
+  for (const unsigned char ch : prompt) {
+    if (std::isspace(ch)) {
+      in_token = false;
+      continue;
+    }
+    if (!in_token) {
+      ++tokens;
+      in_token = true;
+    }
+  }
+
+  return tokens;
+}
 
 class FakeBackend final : public Backend {
  public:
@@ -13,7 +35,7 @@ class FakeBackend final : public Backend {
     return {};
   }
 
-  GenerateResult generate(const GenerateCommand&,
+  GenerateResult generate(const GenerateCommand& command,
                           const DeltaCallback& on_delta) override {
     if (!configured_) {
       return GenerateResult{"error",
@@ -23,8 +45,11 @@ class FakeBackend final : public Backend {
                                 "Backend must be configured before generation."}};
     }
 
+    const std::string prompt = render_prompt(command.input);
     on_delta("fake response");
-    return GenerateResult{"stop", Usage{0, 2}, std::nullopt};
+    return GenerateResult{"stop",
+                          Usage{count_input_tokens(prompt), 2},
+                          std::nullopt};
   }
 
  private:
