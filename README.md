@@ -53,13 +53,22 @@ ctest --test-dir build
 
 The CMake build and test path is currently verified on macOS with Apple clang.
 
+The llama.cpp backend is disabled by default. To configure a build against an existing local llama.cpp build, pass explicit paths:
+
+```sh
+cmake -S . -B build-llama \
+  -DYLLAMA_ENABLE_LLAMA_BACKEND=ON \
+  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
+  -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
+```
+
 Install:
 
 ```sh
 cmake --install build
 ```
 
-The real llama.cpp backend is not enabled yet. The current target is a build skeleton for the runner executable and test setup.
+The real llama.cpp backend is not implemented yet. The current target validates the explicit build options and keeps the fake backend as the default.
 
 ## Current status
 

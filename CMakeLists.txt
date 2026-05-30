@@ -10,6 +10,37 @@ include(GNUInstallDirs)
 
 option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
+set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
+    ""
+    CACHE PATH "Path to llama.cpp public headers")
+set(YLLAMA_LLAMA_CPP_LIBRARIES
+    ""
+    CACHE STRING "Semicolon-separated llama.cpp library paths or linker names")
+
+if(YLLAMA_ENABLE_LLAMA_BACKEND)
+  if(NOT YLLAMA_LLAMA_CPP_INCLUDE_DIR)
+    message(FATAL_ERROR
+      "YLLAMA_ENABLE_LLAMA_BACKEND requires YLLAMA_LLAMA_CPP_INCLUDE_DIR")
+  endif()
+
+  if(NOT EXISTS "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}/llama.h")
+    message(FATAL_ERROR
+      "YLLAMA_LLAMA_CPP_INCLUDE_DIR must contain llama.h")
+  endif()
+
+  if(NOT YLLAMA_LLAMA_CPP_LIBRARIES)
+    message(FATAL_ERROR
+      "YLLAMA_ENABLE_LLAMA_BACKEND requires YLLAMA_LLAMA_CPP_LIBRARIES")
+  endif()
+
+  add_library(llama_cpp_external INTERFACE)
+  target_include_directories(llama_cpp_external INTERFACE
+    "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}"
+  )
+  target_link_libraries(llama_cpp_external INTERFACE
+    ${YLLAMA_LLAMA_CPP_LIBRARIES}
+  )
+endif()
 
 add_library(yllama_protocol
   src/backend.cpp
@@ -24,6 +55,11 @@ target_include_directories(yllama_protocol PUBLIC
 )
 
 target_compile_features(yllama_protocol PUBLIC cxx_std_17)
+
+if(YLLAMA_ENABLE_LLAMA_BACKEND)
+  target_compile_definitions(yllama_protocol PRIVATE YLLAMA_ENABLE_LLAMA_BACKEND=1)
+  target_link_libraries(yllama_protocol PRIVATE llama_cpp_external)
+endif()
 
 add_executable(yllama-runner
   src/main.cpp
