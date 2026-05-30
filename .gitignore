@@ -33,6 +33,9 @@ Testing/
 *.bin
 *.safetensors
 
+# Local test dependencies
+/deps/
+
 # Vendored dependency build output
 /vendor/*/build/
 /third_party/*/build/

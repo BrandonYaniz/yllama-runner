@@ -32,6 +32,8 @@ cmake -S . -B build-llama \
 
 `YLLAMA_LLAMA_CPP_LIBRARIES` accepts a semicolon-separated list when the local llama.cpp build needs more than one library.
 
+For local testing, `deps/` is ignored by git and can hold a temporary llama.cpp checkout or build artifacts. That directory is not part of the package.
+
 When enabled, the llama.cpp backend loads the configured GGUF model during the `configure` command. Token streaming is implemented in a later milestone.
 
 ## Install
