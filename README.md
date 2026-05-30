@@ -69,11 +69,11 @@ Install:
 cmake --install build
 ```
 
-The llama.cpp backend can be built from explicit local paths and currently handles model loading during `configure`. Token generation still uses the fake backend unless llama support is enabled, and real llama.cpp token streaming is still in progress.
+The default build uses a fake backend so the protocol, parser, and runner loop can be tested without external dependencies. When llama.cpp support is enabled, the runner loads the configured GGUF model and streams generated token deltas over stdout.
 
 ## Current status
 
-The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, and run the stdio command loop through a backend interface. The default backend is fake; the opt-in llama.cpp backend can load a configured model, while real token generation is still in progress.
+The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, and run the stdio command loop through a backend interface. The default backend is fake for portable tests; the opt-in llama.cpp backend can load a local GGUF model and stream generated text.
 
 ## License
 
