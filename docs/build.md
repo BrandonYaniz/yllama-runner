@@ -37,6 +37,23 @@ For local testing, `deps/` is ignored by git and can hold a temporary llama.cpp 
 
 When enabled, the llama.cpp backend loads the configured GGUF model during the `configure` command and streams generated token deltas during `generate`.
 
+An opt-in smoke test can run the built runner against a local GGUF model:
+
+```sh
+cmake -S . -B build-llama \
+  -DYLLAMA_ENABLE_LLAMA_BACKEND=ON \
+  -DYLLAMA_ENABLE_LLAMA_SMOKE_TEST=ON \
+  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
+  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
+  -DYLLAMA_LLAMA_CPP_LIBRARIES='/path/to/libllama.dylib;/path/to/libggml.dylib' \
+  -DYLLAMA_LLAMA_SMOKE_MODEL_PATH=/path/to/model.gguf \
+  -DYLLAMA_LLAMA_SMOKE_LIBRARY_PATH=/path/to/runtime/libs
+cmake --build build-llama
+ctest --test-dir build-llama --output-on-failure
+```
+
+The smoke test is disabled by default because it requires a local model and a matching llama.cpp build.
+
 ## Install
 
 ```sh

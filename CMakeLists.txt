@@ -10,6 +10,7 @@ include(GNUInstallDirs)
 
 option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
+option(YLLAMA_ENABLE_LLAMA_SMOKE_TEST "Enable opt-in llama.cpp backend smoke test" OFF)
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
     ""
     CACHE PATH "Path to llama.cpp public headers")
@@ -19,6 +20,12 @@ set(YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS
 set(YLLAMA_LLAMA_CPP_LIBRARIES
     ""
     CACHE STRING "Semicolon-separated llama.cpp library paths or linker names")
+set(YLLAMA_LLAMA_SMOKE_MODEL_PATH
+    ""
+    CACHE FILEPATH "GGUF model path for the opt-in llama.cpp smoke test")
+set(YLLAMA_LLAMA_SMOKE_LIBRARY_PATH
+    ""
+    CACHE PATH "Runtime library path for the opt-in llama.cpp smoke test")
 
 if(YLLAMA_ENABLE_LLAMA_BACKEND)
   if(NOT YLLAMA_LLAMA_CPP_INCLUDE_DIR)
@@ -182,4 +189,47 @@ if(YLLAMA_BUILD_TESTS)
     NAME runner-loop
     COMMAND runner_test
   )
+
+  if(YLLAMA_ENABLE_LLAMA_SMOKE_TEST)
+    if(NOT YLLAMA_ENABLE_LLAMA_BACKEND)
+      message(FATAL_ERROR
+        "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires YLLAMA_ENABLE_LLAMA_BACKEND")
+    endif()
+
+    if(NOT YLLAMA_LLAMA_SMOKE_MODEL_PATH)
+      message(FATAL_ERROR
+        "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires YLLAMA_LLAMA_SMOKE_MODEL_PATH")
+    endif()
+
+    if(NOT EXISTS "${YLLAMA_LLAMA_SMOKE_MODEL_PATH}")
+      message(FATAL_ERROR
+        "YLLAMA_LLAMA_SMOKE_MODEL_PATH must point to an existing GGUF model")
+    endif()
+
+    find_program(SH_EXECUTABLE sh)
+    if(NOT SH_EXECUTABLE)
+      message(FATAL_ERROR
+        "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires a POSIX sh executable")
+    endif()
+    configure_file(
+      tests/llama_smoke_test.sh.in
+      "${CMAKE_CURRENT_BINARY_DIR}/llama_smoke_test.sh"
+      @ONLY
+    )
+
+    add_test(
+      NAME llama-backend-smoke
+      COMMAND "${SH_EXECUTABLE}"
+              "${CMAKE_CURRENT_BINARY_DIR}/llama_smoke_test.sh"
+              "$<TARGET_FILE:yllama-runner>"
+              "${YLLAMA_LLAMA_SMOKE_MODEL_PATH}"
+    )
+
+    if(YLLAMA_LLAMA_SMOKE_LIBRARY_PATH)
+      set_tests_properties(llama-backend-smoke PROPERTIES
+        ENVIRONMENT
+          "DYLD_LIBRARY_PATH=${YLLAMA_LLAMA_SMOKE_LIBRARY_PATH};LD_LIBRARY_PATH=${YLLAMA_LLAMA_SMOKE_LIBRARY_PATH}"
+      )
+    endif()
+  endif()
 endif()

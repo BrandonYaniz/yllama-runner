@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+runner=$1
+model=$2
+
+out=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-out.XXXXXX")
+err=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-err.XXXXXX")
+trap 'rm -f "$out" "$err"' EXIT
+
+printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Complete this sentence in four words: The sky is"},"settings":{"max_tokens":8,"temperature":0}}\n{"type":"shutdown","id":"shutdown-001"}\n' "$model" \
+  | "$runner" > "$out" 2> "$err"
+
+if grep -q '"type":"error"' "$out"; then
+  cat "$out"
+  exit 1
+fi
+
+grep -q '"type":"ready"' "$out"
+grep -q '"type":"delta"' "$out"
+grep -q '"type":"completed"' "$out"
