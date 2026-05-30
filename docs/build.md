@@ -35,7 +35,7 @@ cmake -S . -B build-llama \
 
 For local testing, `deps/` is ignored by git and can hold a temporary llama.cpp checkout or build artifacts. That directory is not part of the package.
 
-When enabled, the llama.cpp backend loads the configured GGUF model during the `configure` command. Token streaming is implemented in a later milestone.
+When enabled, the llama.cpp backend loads the configured GGUF model during the `configure` command and streams generated token deltas during `generate`.
 
 ## Install
 

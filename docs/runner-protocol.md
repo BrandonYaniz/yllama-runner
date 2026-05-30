@@ -19,13 +19,13 @@ On startup, the runner sends:
 The supervisor sends configuration:
 
 ```json
-{"type":"configure","id":"cfg-001","model_path":"/var/lib/yllmd/models/fast/current/model.gguf","context_tokens":8192,"threads":4}
+{"type":"configure","id":"cfg-001","model_path":"/models/local/model.gguf","context_tokens":8192,"threads":4}
 ```
 
 The runner loads the model and replies:
 
 ```json
-{"type":"ready","id":"cfg-001","model_path":"/var/lib/yllmd/models/fast/current/model.gguf","context_tokens":8192}
+{"type":"ready","id":"cfg-001","model_path":"/models/local/model.gguf","context_tokens":8192}
 ```
 
 If loading fails:
