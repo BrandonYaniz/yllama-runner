@@ -57,6 +57,9 @@ target_include_directories(yllama_protocol PUBLIC
 target_compile_features(yllama_protocol PUBLIC cxx_std_17)
 
 if(YLLAMA_ENABLE_LLAMA_BACKEND)
+  target_sources(yllama_protocol PRIVATE
+    src/llama_backend.cpp
+  )
   target_compile_definitions(yllama_protocol PRIVATE YLLAMA_ENABLE_LLAMA_BACKEND=1)
   target_link_libraries(yllama_protocol PRIVATE llama_cpp_external)
 endif()

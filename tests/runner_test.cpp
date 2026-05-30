@@ -1,8 +1,11 @@
 #include "runner.hpp"
 
 #include <cassert>
+#include <memory>
 #include <sstream>
 #include <string>
+
+#include "backend.hpp"
 
 namespace {
 
@@ -10,8 +13,9 @@ std::string run_with_input(const std::string& input, int expected_status = 0) {
   std::istringstream in(input);
   std::ostringstream out;
   std::ostringstream err;
+  std::unique_ptr<yllama::Backend> backend = yllama::make_fake_backend();
 
-  const int status = yllama::run_stdio(in, out, err);
+  const int status = yllama::run_stdio(in, out, err, *backend);
   assert(status == expected_status);
   assert(err.str().empty());
   return out.str();

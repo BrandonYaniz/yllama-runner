@@ -34,8 +34,8 @@ void handle_configure(const ConfigureCommand& command,
   }
 
   state.configured = true;
-  state.model_path = command.model_path;
-  state.context_tokens = command.context_tokens;
+  state.model_path = result.model_path;
+  state.context_tokens = result.context_tokens;
 
   emit(out, ready_event(command.id, state.model_path, state.context_tokens));
 }
@@ -72,7 +72,7 @@ void handle_cancel(const CancelCommand& command, std::ostream& out) {
 }  // namespace
 
 int run_stdio(std::istream& in, std::ostream& out, std::ostream& err) {
-  std::unique_ptr<Backend> backend = make_fake_backend();
+  std::unique_ptr<Backend> backend = make_default_backend();
   return run_stdio(in, out, err, *backend);
 }
 

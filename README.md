@@ -68,11 +68,11 @@ Install:
 cmake --install build
 ```
 
-The real llama.cpp backend is not implemented yet. The current target validates the explicit build options and keeps the fake backend as the default.
+The llama.cpp backend can be built from explicit local paths and currently handles model loading during `configure`. Token generation still uses the fake backend unless llama support is enabled, and real llama.cpp token streaming is still in progress.
 
 ## Current status
 
-The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, and run the stdio command loop through a backend interface. The current backend is fake; model loading and real generation are still in progress.
+The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, and run the stdio command loop through a backend interface. The default backend is fake; the opt-in llama.cpp backend can load a configured model, while real token generation is still in progress.
 
 ## License
 

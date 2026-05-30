@@ -2,6 +2,10 @@
 
 #include <cctype>
 
+#ifdef YLLAMA_ENABLE_LLAMA_BACKEND
+#include "llama_backend.hpp"
+#endif
+
 #include "prompt.hpp"
 
 namespace yllama {
@@ -32,7 +36,7 @@ class FakeBackend final : public Backend {
     context_tokens_ = command.context_tokens;
     threads_ = command.threads;
     configured_ = true;
-    return {};
+    return ConfigureResult{std::nullopt, model_path_, context_tokens_};
   }
 
   GenerateResult generate(const GenerateCommand& command,
@@ -63,6 +67,14 @@ class FakeBackend final : public Backend {
 
 std::unique_ptr<Backend> make_fake_backend() {
   return std::make_unique<FakeBackend>();
+}
+
+std::unique_ptr<Backend> make_default_backend() {
+#ifdef YLLAMA_ENABLE_LLAMA_BACKEND
+  return make_llama_backend();
+#else
+  return make_fake_backend();
+#endif
 }
 
 }  // namespace yllama

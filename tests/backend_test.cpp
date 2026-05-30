@@ -20,6 +20,8 @@ int main() {
     const auto result = backend->configure(
         yllama::ConfigureCommand{"cfg-001", "/models/fast/model.gguf", 8192, 4});
     assert(!result.error.has_value());
+    assert(result.model_path == "/models/fast/model.gguf");
+    assert(result.context_tokens == 8192);
   }
 
   {

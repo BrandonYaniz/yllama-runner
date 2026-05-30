@@ -19,6 +19,8 @@ struct BackendError {
 
 struct ConfigureResult {
   std::optional<BackendError> error;
+  std::string model_path;
+  int context_tokens = 0;
 };
 
 struct GenerateResult {
@@ -39,6 +41,7 @@ class Backend {
 };
 
 std::unique_ptr<Backend> make_fake_backend();
+std::unique_ptr<Backend> make_default_backend();
 
 }  // namespace yllama
 
