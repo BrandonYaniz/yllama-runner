@@ -27,6 +27,7 @@ The project does not download llama.cpp during configuration. Build or install l
 cmake -S . -B build-llama \
   -DYLLAMA_ENABLE_LLAMA_BACKEND=ON \
   -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
+  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
   -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
 ```
 

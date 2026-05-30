@@ -5,6 +5,7 @@
 /out/
 /tmp/
 /.cache/
+/build-*/
 
 # CMake
 CMakeFiles/

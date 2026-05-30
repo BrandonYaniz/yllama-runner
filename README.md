@@ -59,6 +59,7 @@ The llama.cpp backend is disabled by default. To configure a build against an ex
 cmake -S . -B build-llama \
   -DYLLAMA_ENABLE_LLAMA_BACKEND=ON \
   -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
+  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
   -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
 ```
 

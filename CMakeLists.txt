@@ -13,6 +13,9 @@ option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
     ""
     CACHE PATH "Path to llama.cpp public headers")
+set(YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS
+    ""
+    CACHE STRING "Semicolon-separated extra include paths required by llama.cpp")
 set(YLLAMA_LLAMA_CPP_LIBRARIES
     ""
     CACHE STRING "Semicolon-separated llama.cpp library paths or linker names")
@@ -36,6 +39,7 @@ if(YLLAMA_ENABLE_LLAMA_BACKEND)
   add_library(llama_cpp_external INTERFACE)
   target_include_directories(llama_cpp_external INTERFACE
     "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}"
+    ${YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS}
   )
   target_link_libraries(llama_cpp_external INTERFACE
     ${YLLAMA_LLAMA_CPP_LIBRARIES}
