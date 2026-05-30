@@ -30,6 +30,7 @@ struct GenerateResult {
 };
 
 using DeltaCallback = std::function<void(std::string_view text)>;
+using CancellationCallback = std::function<bool()>;
 
 class Backend {
  public:
@@ -37,7 +38,8 @@ class Backend {
 
   virtual ConfigureResult configure(const ConfigureCommand& command) = 0;
   virtual GenerateResult generate(const GenerateCommand& command,
-                                  const DeltaCallback& on_delta) = 0;
+                                  const DeltaCallback& on_delta,
+                                  const CancellationCallback& is_cancelled) = 0;
 };
 
 std::unique_ptr<Backend> make_fake_backend();

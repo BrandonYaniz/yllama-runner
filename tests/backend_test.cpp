@@ -11,7 +11,8 @@ int main() {
   command.input = yllama::PromptInput{"Hello"};
 
   {
-    const auto result = backend->generate(command, [](std::string_view) {});
+    const auto result = backend->generate(
+        command, [](std::string_view) {}, []() { return false; });
     assert(result.error.has_value());
     assert(result.error->code == "not_configured");
   }
@@ -27,7 +28,8 @@ int main() {
   {
     std::string delta;
     const auto result = backend->generate(
-        command, [&](std::string_view text) { delta.append(text); });
+        command, [&](std::string_view text) { delta.append(text); },
+        []() { return false; });
     assert(!result.error.has_value());
     assert(delta == "fake response");
     assert(result.finish_reason == "stop");

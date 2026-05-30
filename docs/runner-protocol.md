@@ -54,10 +54,16 @@ If loading fails:
 {"type":"cancel","id":"req-001"}
 ```
 
-If cancellation succeeds:
+The `id` must match the active generation request. If cancellation succeeds, the runner emits `cancelled` after the active backend observes the cancellation request:
 
 ```json
 {"type":"cancelled","id":"req-001"}
+```
+
+If no active request matches the id:
+
+```json
+{"type":"error","id":"req-001","code":"request_not_active","message":"No active request matched the cancel command."}
 ```
 
 ## Shutdown

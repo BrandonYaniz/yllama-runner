@@ -38,7 +38,8 @@ class FakeBackend final : public Backend {
   }
 
   GenerateResult generate(const GenerateCommand& command,
-                          const DeltaCallback& on_delta) override {
+                          const DeltaCallback& on_delta,
+                          const CancellationCallback& is_cancelled) override {
     if (!configured_) {
       return GenerateResult{"error",
                             Usage{},
@@ -48,6 +49,11 @@ class FakeBackend final : public Backend {
     }
 
     const std::string prompt = render_prompt(command.input);
+    if (is_cancelled()) {
+      return GenerateResult{"cancelled", Usage{count_input_tokens(prompt), 0},
+                            std::nullopt};
+    }
+
     on_delta("fake response");
     return GenerateResult{"stop",
                           Usage{count_input_tokens(prompt), 2},

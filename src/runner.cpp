@@ -1,9 +1,12 @@
 #include "runner.hpp"
 
+#include <atomic>
 #include <istream>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <string>
+#include <thread>
 
 #include "backend.hpp"
 #include "jsonl.hpp"
@@ -18,18 +21,47 @@ struct RuntimeState {
   int context_tokens = 0;
 };
 
+struct ActiveRequest {
+  std::string id;
+  std::atomic<bool> cancel_requested{false};
+  std::atomic<bool> done{false};
+  std::thread worker;
+};
+
 void emit(std::ostream& out, std::string_view event_json) {
   write_json_line(out, event_json);
   out.flush();
 }
 
+void emit_locked(std::ostream& out,
+                 std::mutex& out_mutex,
+                 std::string_view event_json) {
+  std::lock_guard<std::mutex> lock(out_mutex);
+  emit(out, event_json);
+}
+
+void join_active_request(std::unique_ptr<ActiveRequest>& active) {
+  if (active && active->worker.joinable()) {
+    active->worker.join();
+  }
+  active.reset();
+}
+
+void reap_finished_request(std::unique_ptr<ActiveRequest>& active) {
+  if (active && active->done.load()) {
+    join_active_request(active);
+  }
+}
+
 void handle_configure(const ConfigureCommand& command,
                       RuntimeState& state,
                       Backend& backend,
-                      std::ostream& out) {
+                      std::ostream& out,
+                      std::mutex& out_mutex) {
   ConfigureResult result = backend.configure(command);
   if (result.error) {
-    emit(out, error_event(command.id, result.error->code, result.error->message));
+    emit_locked(out, out_mutex,
+                error_event(command.id, result.error->code, result.error->message));
     return;
   }
 
@@ -37,36 +69,71 @@ void handle_configure(const ConfigureCommand& command,
   state.model_path = result.model_path;
   state.context_tokens = result.context_tokens;
 
-  emit(out, ready_event(command.id, state.model_path, state.context_tokens));
+  emit_locked(out, out_mutex,
+              ready_event(command.id, state.model_path, state.context_tokens));
 }
 
 void handle_generate(const GenerateCommand& command,
                      const RuntimeState& state,
                      Backend& backend,
-                     std::ostream& out) {
+                     std::ostream& out,
+                     std::mutex& out_mutex,
+                     std::unique_ptr<ActiveRequest>& active) {
   if (!state.configured) {
-    emit(out, error_event(command.id, "not_configured",
-                          "Runner must be configured before generation."));
+    emit_locked(out, out_mutex,
+                error_event(command.id, "not_configured",
+                            "Runner must be configured before generation."));
     return;
   }
 
-  emit(out, started_event(command.id));
-
-  GenerateResult result = backend.generate(
-      command,
-      [&](std::string_view text) { emit(out, delta_event(command.id, text)); });
-
-  if (result.error) {
-    emit(out, error_event(command.id, result.error->code, result.error->message));
+  if (active) {
+    emit_locked(out, out_mutex,
+                error_event(command.id, "request_active",
+                            "Runner already has an active generation request."));
     return;
   }
 
-  emit(out, completed_event(command.id, result.finish_reason, result.usage));
+  active = std::make_unique<ActiveRequest>();
+  active->id = command.id;
+  ActiveRequest* request = active.get();
+
+  request->worker = std::thread([command, request, &backend, &out, &out_mutex]() {
+    emit_locked(out, out_mutex, started_event(command.id));
+
+    GenerateResult result = backend.generate(
+        command,
+        [&](std::string_view text) {
+          emit_locked(out, out_mutex, delta_event(command.id, text));
+        },
+        [request]() { return request->cancel_requested.load(); });
+
+    if (result.error) {
+      emit_locked(out, out_mutex,
+                  error_event(command.id, result.error->code,
+                              result.error->message));
+    } else if (result.finish_reason == "cancelled") {
+      emit_locked(out, out_mutex, cancelled_event(command.id));
+    } else {
+      emit_locked(out, out_mutex,
+                  completed_event(command.id, result.finish_reason, result.usage));
+    }
+
+    request->done.store(true);
+  });
 }
 
-void handle_cancel(const CancelCommand& command, std::ostream& out) {
-  emit(out, error_event(command.id, "request_not_active",
-                        "No active request matched the cancel command."));
+void handle_cancel(const CancelCommand& command,
+                   std::ostream& out,
+                   std::mutex& out_mutex,
+                   const std::unique_ptr<ActiveRequest>& active) {
+  if (!active || active->id != command.id || active->done.load()) {
+    emit_locked(out, out_mutex,
+                error_event(command.id, "request_not_active",
+                            "No active request matched the cancel command."));
+    return;
+  }
+
+  active->cancel_requested.store(true);
 }
 
 }  // namespace
@@ -81,33 +148,50 @@ int run_stdio(std::istream& in,
               std::ostream& err,
               Backend& backend) {
   RuntimeState state;
+  std::mutex out_mutex;
+  std::unique_ptr<ActiveRequest> active;
 
-  emit(out, hello_event());
+  emit_locked(out, out_mutex, hello_event());
 
   std::string line;
   while (std::getline(in, line)) {
+    reap_finished_request(active);
+
     ParseResult parsed = parse_command_line(line);
     if (parsed.error) {
-      emit(out, error_event("", parsed.error->code, parsed.error->message));
+      emit_locked(out, out_mutex,
+                  error_event("", parsed.error->code, parsed.error->message));
       continue;
     }
 
     const Command& command = *parsed.command;
     if (const auto* configure = std::get_if<ConfigureCommand>(&command)) {
-      handle_configure(*configure, state, backend, out);
+      if (active) {
+        emit_locked(out, out_mutex,
+                    error_event(configure->id, "request_active",
+                                "Runner already has an active generation request."));
+      } else {
+        handle_configure(*configure, state, backend, out, out_mutex);
+      }
       continue;
     }
     if (const auto* generate = std::get_if<GenerateCommand>(&command)) {
-      handle_generate(*generate, state, backend, out);
+      handle_generate(*generate, state, backend, out, out_mutex, active);
       continue;
     }
     if (const auto* cancel = std::get_if<CancelCommand>(&command)) {
-      handle_cancel(*cancel, out);
+      handle_cancel(*cancel, out, out_mutex, active);
       continue;
     }
     if (std::get_if<ShutdownCommand>(&command) != nullptr) {
+      join_active_request(active);
       return 0;
     }
+  }
+
+  if (active) {
+    active->cancel_requested.store(true);
+    join_active_request(active);
   }
 
   if (!in.eof()) {

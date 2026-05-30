@@ -1,24 +1,63 @@
 #include "runner.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include "backend.hpp"
 
 namespace {
 
-std::string run_with_input(const std::string& input, int expected_status = 0) {
+class BlockingBackend final : public yllama::Backend {
+ public:
+  yllama::ConfigureResult configure(
+      const yllama::ConfigureCommand& command) override {
+    configured_ = true;
+    return yllama::ConfigureResult{std::nullopt, command.model_path,
+                                   command.context_tokens};
+  }
+
+  yllama::GenerateResult generate(
+      const yllama::GenerateCommand&,
+      const yllama::DeltaCallback&,
+      const yllama::CancellationCallback& is_cancelled) override {
+    if (!configured_) {
+      return yllama::GenerateResult{
+          "error", yllama::Usage{},
+          yllama::BackendError{"not_configured",
+                               "Backend must be configured before generation."}};
+    }
+
+    while (!is_cancelled()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return yllama::GenerateResult{"cancelled", yllama::Usage{}, std::nullopt};
+  }
+
+ private:
+  bool configured_ = false;
+};
+
+std::string run_with_backend(yllama::Backend& backend,
+                             const std::string& input,
+                             int expected_status = 0) {
   std::istringstream in(input);
   std::ostringstream out;
   std::ostringstream err;
-  std::unique_ptr<yllama::Backend> backend = yllama::make_fake_backend();
 
-  const int status = yllama::run_stdio(in, out, err, *backend);
+  const int status = yllama::run_stdio(in, out, err, backend);
   assert(status == expected_status);
   assert(err.str().empty());
   return out.str();
+}
+
+std::string run_with_input(const std::string& input, int expected_status = 0) {
+  std::unique_ptr<yllama::Backend> backend = yllama::make_fake_backend();
+  return run_with_backend(*backend, input, expected_status);
 }
 
 }  // namespace
@@ -92,6 +131,30 @@ int main() {
            "{\"type\":\"error\",\"id\":\"req-001\","
            "\"code\":\"not_configured\","
            "\"message\":\"Runner must be configured before generation.\"}\n");
+  }
+
+  {
+    BlockingBackend backend;
+    const std::string out = run_with_backend(
+        backend,
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":128}}\n"
+        "{\"type\":\"cancel\",\"id\":\"req-001\"}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(out ==
+           "{\"type\":\"hello\",\"protocol_version\":1,"
+           "\"runner\":\"yllama-runner\","
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "{\"type\":\"ready\",\"id\":\"cfg-001\","
+           "\"model_path\":\"/models/fast/model.gguf\","
+           "\"context_tokens\":8192}\n"
+           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
+           "{\"type\":\"cancelled\",\"id\":\"req-001\"}\n");
   }
 
   return 0;

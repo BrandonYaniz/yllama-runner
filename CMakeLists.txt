@@ -8,6 +8,8 @@ project(
 
 include(GNUInstallDirs)
 
+find_package(Threads REQUIRED)
+
 option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_SMOKE_TEST "Enable opt-in llama.cpp backend smoke test" OFF)
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
@@ -64,7 +66,7 @@ target_include_directories(yllama_protocol PUBLIC
 )
 
 target_compile_features(yllama_protocol PUBLIC cxx_std_17)
-target_link_libraries(yllama_protocol PRIVATE llama_cpp_external)
+target_link_libraries(yllama_protocol PRIVATE llama_cpp_external Threads::Threads)
 
 add_executable(yllama-runner
   src/main.cpp

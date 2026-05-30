@@ -206,7 +206,8 @@ class LlamaBackend final : public Backend {
   }
 
   GenerateResult generate(const GenerateCommand& command,
-                          const DeltaCallback& on_delta) override {
+                          const DeltaCallback& on_delta,
+                          const CancellationCallback& is_cancelled) override {
     if (!context_) {
       return generate_error("not_configured",
                             "Backend must be configured before generation.");
@@ -228,6 +229,10 @@ class LlamaBackend final : public Backend {
 
     const llama_vocab* vocab = llama_model_get_vocab(model_.get());
     const std::string prompt = render_prompt(command.input);
+    if (is_cancelled()) {
+      return GenerateResult{"cancelled", Usage{}, std::nullopt};
+    }
+
     auto prompt_tokens = tokenize_prompt(vocab, prompt);
     if (!prompt_tokens) {
       return generate_error("tokenize_failed", "Unable to tokenize prompt.");
@@ -275,10 +280,20 @@ class LlamaBackend final : public Backend {
     std::string finish_reason = "length";
     while (n_pos + batch.n_tokens < context_tokens_ &&
            output_tokens < max_tokens) {
+      if (is_cancelled()) {
+        finish_reason = "cancelled";
+        break;
+      }
+
       if (llama_decode(context_.get(), batch) != 0) {
         return generate_error("decode_failed", "llama.cpp failed to decode tokens.");
       }
       n_pos += batch.n_tokens;
+
+      if (is_cancelled()) {
+        finish_reason = "cancelled";
+        break;
+      }
 
       llama_token next_token = llama_sampler_sample(sampler.get(), context_.get(), -1);
       if (llama_vocab_is_eog(vocab, next_token)) {
