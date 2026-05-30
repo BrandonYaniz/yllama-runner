@@ -52,6 +52,17 @@ int main() {
 
   {
     const auto result = yllama::parse_command_line(
+        "{\"type\":\"generate\",\"id\":\"req-stop\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,\"temperature\":0,"
+        "\"stop\":[\" blue\"]}}");
+    const auto& command = get_command<yllama::GenerateCommand>(result);
+    assert(command.settings.stop.size() == 1);
+    assert(command.settings.stop[0] == " blue");
+  }
+
+  {
+    const auto result = yllama::parse_command_line(
         "{\"type\":\"generate\",\"id\":\"req-002\","
         "\"input\":{\"kind\":\"messages\",\"messages\":["
         "{\"role\":\"system\",\"content\":\"Answer clearly.\"},"

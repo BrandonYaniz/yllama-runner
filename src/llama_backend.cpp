@@ -146,7 +146,7 @@ std::optional<std::size_t> first_stop_position(
     if (stop.empty()) {
       continue;
     }
-    const std::size_t found = text.find(stop);
+    const std::size_t found = text.find(std::string_view(stop));
     if (found != std::string_view::npos && (!earliest || found < *earliest)) {
       earliest = found;
     }
@@ -316,6 +316,7 @@ class LlamaBackend final : public Backend {
           on_delta(std::string_view(generated).substr(emitted, *stop_at - emitted));
           emitted = *stop_at;
         }
+        generated.resize(*stop_at);
         finish_reason = "stop";
         break;
       }

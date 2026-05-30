@@ -4,18 +4,89 @@ set -eu
 runner=$1
 model=$2
 
+in=$(mktemp -u "${TMPDIR:-/tmp}/yllama-smoke-in.XXXXXX")
 out=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-out.XXXXXX")
 err=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-err.XXXXXX")
-trap 'rm -f "$out" "$err"' EXIT
+pid=
 
-printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Complete this sentence in four words: The sky is"},"settings":{"max_tokens":8,"temperature":0}}\n{"type":"shutdown","id":"shutdown-001"}\n' "$model" \
-  | "$runner" > "$out" 2> "$err"
+cleanup() {
+  if [ -n "$pid" ]; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  rm -f "$in" "$out" "$err"
+}
+trap cleanup EXIT
+
+fail() {
+  printf '%s\n' "$1"
+  printf '%s\n' "--- stdout ---"
+  cat "$out"
+  printf '%s\n' "--- stderr ---"
+  cat "$err"
+  exit 1
+}
+
+wait_for() {
+  pattern=$1
+  attempts=0
+  while [ "$attempts" -lt 100 ]; do
+    if grep -q "$pattern" "$out"; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.1
+  done
+  fail "timed out waiting for $pattern"
+}
+
+assert_stdout_is_jsonl() {
+  if [ -s "$out" ] && grep -v '^{.*}$' "$out" >/dev/null; then
+    fail "stdout contained a non-JSONL line"
+  fi
+}
+
+mkfifo "$in"
+"$runner" < "$in" > "$out" 2> "$err" &
+pid=$!
+
+exec 3>"$in"
+
+printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n' "$model" >&3
+wait_for '"type":"ready"'
+
+printf '{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Complete this sentence in four words: The sky is"},"settings":{"max_tokens":8,"temperature":0,"stop":[" blue"]}}\n' >&3
+wait_for '"id":"req-001","finish_reason":"stop"'
+
+if grep -q '"type":"delta".* blue' "$out"; then
+  fail "stop sequence leaked into streamed delta text"
+fi
+
+printf '{"type":"generate","id":"req-002","input":{"kind":"prompt","prompt":"Complete this sentence in three words: Local models are"},"settings":{"max_tokens":8,"temperature":0}}\n' >&3
+wait_for '"type":"completed","id":"req-002"'
+
+printf '{"type":"shutdown","id":"shutdown-001"}\n' >&3
+exec 3>&-
+wait "$pid"
+pid=
+
+assert_stdout_is_jsonl
 
 if grep -q '"type":"error"' "$out"; then
-  cat "$out"
-  exit 1
+  fail "runner emitted an error event"
 fi
 
 grep -q '"type":"ready"' "$out"
-grep -q '"type":"delta"' "$out"
-grep -q '"type":"completed"' "$out"
+grep -q '"id":"req-001"' "$out"
+grep -q '"id":"req-002"' "$out"
+
+started_count=$(grep -c '"type":"started"' "$out")
+completed_count=$(grep -c '"type":"completed"' "$out")
+
+if [ "$started_count" -ne 2 ]; then
+  fail "expected two started events"
+fi
+
+if [ "$completed_count" -ne 2 ]; then
+  fail "expected two completed events"
+fi

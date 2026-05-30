@@ -96,30 +96,33 @@ void handle_generate(const GenerateCommand& command,
   active = std::make_unique<ActiveRequest>();
   active->id = command.id;
   ActiveRequest* request = active.get();
+  GenerateCommand request_command = command;
 
-  request->worker = std::thread([command, request, &backend, &out, &out_mutex]() {
-    emit_locked(out, out_mutex, started_event(command.id));
+  request->worker =
+      std::thread([request_command, request, &backend, &out, &out_mutex]() {
+        emit_locked(out, out_mutex, started_event(request_command.id));
 
-    GenerateResult result = backend.generate(
-        command,
-        [&](std::string_view text) {
-          emit_locked(out, out_mutex, delta_event(command.id, text));
-        },
-        [request]() { return request->cancel_requested.load(); });
+        GenerateResult result = backend.generate(
+            request_command,
+            [&](std::string_view text) {
+              emit_locked(out, out_mutex, delta_event(request_command.id, text));
+            },
+            [request]() { return request->cancel_requested.load(); });
 
-    if (result.error) {
-      emit_locked(out, out_mutex,
-                  error_event(command.id, result.error->code,
-                              result.error->message));
-    } else if (result.finish_reason == "cancelled") {
-      emit_locked(out, out_mutex, cancelled_event(command.id));
-    } else {
-      emit_locked(out, out_mutex,
-                  completed_event(command.id, result.finish_reason, result.usage));
-    }
+        if (result.error) {
+          emit_locked(out, out_mutex,
+                      error_event(request_command.id, result.error->code,
+                                  result.error->message));
+        } else if (result.finish_reason == "cancelled") {
+          emit_locked(out, out_mutex, cancelled_event(request_command.id));
+        } else {
+          emit_locked(out, out_mutex,
+                      completed_event(request_command.id, result.finish_reason,
+                                      result.usage));
+        }
 
-    request->done.store(true);
-  });
+        request->done.store(true);
+      });
 }
 
 void handle_cancel(const CancelCommand& command,
