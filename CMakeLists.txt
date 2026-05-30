@@ -9,7 +9,6 @@ project(
 include(GNUInstallDirs)
 
 option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
-option(YLLAMA_ENABLE_LLAMA_BACKEND "Build with llama.cpp backend support" OFF)
 option(YLLAMA_ENABLE_LLAMA_SMOKE_TEST "Enable opt-in llama.cpp backend smoke test" OFF)
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
     ""
@@ -27,35 +26,34 @@ set(YLLAMA_LLAMA_SMOKE_LIBRARY_PATH
     ""
     CACHE PATH "Runtime library path for the opt-in llama.cpp smoke test")
 
-if(YLLAMA_ENABLE_LLAMA_BACKEND)
-  if(NOT YLLAMA_LLAMA_CPP_INCLUDE_DIR)
-    message(FATAL_ERROR
-      "YLLAMA_ENABLE_LLAMA_BACKEND requires YLLAMA_LLAMA_CPP_INCLUDE_DIR")
-  endif()
-
-  if(NOT EXISTS "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}/llama.h")
-    message(FATAL_ERROR
-      "YLLAMA_LLAMA_CPP_INCLUDE_DIR must contain llama.h")
-  endif()
-
-  if(NOT YLLAMA_LLAMA_CPP_LIBRARIES)
-    message(FATAL_ERROR
-      "YLLAMA_ENABLE_LLAMA_BACKEND requires YLLAMA_LLAMA_CPP_LIBRARIES")
-  endif()
-
-  add_library(llama_cpp_external INTERFACE)
-  target_include_directories(llama_cpp_external INTERFACE
-    "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}"
-    ${YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS}
-  )
-  target_link_libraries(llama_cpp_external INTERFACE
-    ${YLLAMA_LLAMA_CPP_LIBRARIES}
-  )
+if(NOT YLLAMA_LLAMA_CPP_INCLUDE_DIR)
+  message(FATAL_ERROR
+    "YLLAMA_LLAMA_CPP_INCLUDE_DIR is required")
 endif()
+
+if(NOT EXISTS "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}/llama.h")
+  message(FATAL_ERROR
+    "YLLAMA_LLAMA_CPP_INCLUDE_DIR must contain llama.h")
+endif()
+
+if(NOT YLLAMA_LLAMA_CPP_LIBRARIES)
+  message(FATAL_ERROR
+    "YLLAMA_LLAMA_CPP_LIBRARIES is required")
+endif()
+
+add_library(llama_cpp_external INTERFACE)
+target_include_directories(llama_cpp_external INTERFACE
+  "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}"
+  ${YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS}
+)
+target_link_libraries(llama_cpp_external INTERFACE
+  ${YLLAMA_LLAMA_CPP_LIBRARIES}
+)
 
 add_library(yllama_protocol
   src/backend.cpp
   src/jsonl.cpp
+  src/llama_backend.cpp
   src/prompt.cpp
   src/protocol.cpp
   src/runner.cpp
@@ -66,14 +64,7 @@ target_include_directories(yllama_protocol PUBLIC
 )
 
 target_compile_features(yllama_protocol PUBLIC cxx_std_17)
-
-if(YLLAMA_ENABLE_LLAMA_BACKEND)
-  target_sources(yllama_protocol PRIVATE
-    src/llama_backend.cpp
-  )
-  target_compile_definitions(yllama_protocol PRIVATE YLLAMA_ENABLE_LLAMA_BACKEND=1)
-  target_link_libraries(yllama_protocol PRIVATE llama_cpp_external)
-endif()
+target_link_libraries(yllama_protocol PRIVATE llama_cpp_external)
 
 add_executable(yllama-runner
   src/main.cpp
@@ -191,11 +182,6 @@ if(YLLAMA_BUILD_TESTS)
   )
 
   if(YLLAMA_ENABLE_LLAMA_SMOKE_TEST)
-    if(NOT YLLAMA_ENABLE_LLAMA_BACKEND)
-      message(FATAL_ERROR
-        "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires YLLAMA_ENABLE_LLAMA_BACKEND")
-    endif()
-
     if(NOT YLLAMA_LLAMA_SMOKE_MODEL_PATH)
       message(FATAL_ERROR
         "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires YLLAMA_LLAMA_SMOKE_MODEL_PATH")

@@ -42,26 +42,21 @@ Requirements:
 
 - CMake 3.16 or newer
 - C++17 compiler
+- A local llama.cpp build or install
+- A local GGUF model for runtime use
 
-Build and run the initial smoke test:
+Configure against an existing local llama.cpp build, then build and run tests:
 
 ```sh
-cmake -S . -B build
+cmake -S . -B build \
+  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
+  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
+  -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
 cmake --build build
 ctest --test-dir build
 ```
 
 The CMake build and test path is currently verified on macOS with Apple clang.
-
-The llama.cpp backend is disabled by default. To configure a build against an existing local llama.cpp build, pass explicit paths:
-
-```sh
-cmake -S . -B build-llama \
-  -DYLLAMA_ENABLE_LLAMA_BACKEND=ON \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
-```
 
 Install:
 
@@ -69,11 +64,11 @@ Install:
 cmake --install build
 ```
 
-The default build uses a fake backend so the protocol, parser, and runner loop can be tested without external dependencies. When llama.cpp support is enabled, the runner loads the configured GGUF model and streams generated token deltas over stdout.
+The runner uses llama.cpp as its production backend. Tests still use an internal fake backend where that keeps parser and protocol checks deterministic.
 
 ## Current status
 
-The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, and run the stdio command loop through a backend interface. The default backend is fake for portable tests; the opt-in llama.cpp backend can load a local GGUF model and stream generated text.
+The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, load a local GGUF model through llama.cpp, stream generated text, and report token usage.
 
 ## License
 

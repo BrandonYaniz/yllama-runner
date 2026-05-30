@@ -2,9 +2,7 @@
 
 #include <cctype>
 
-#ifdef YLLAMA_ENABLE_LLAMA_BACKEND
 #include "llama_backend.hpp"
-#endif
 
 #include "prompt.hpp"
 
@@ -70,11 +68,7 @@ std::unique_ptr<Backend> make_fake_backend() {
 }
 
 std::unique_ptr<Backend> make_default_backend() {
-#ifdef YLLAMA_ENABLE_LLAMA_BACKEND
   return make_llama_backend();
-#else
-  return make_fake_backend();
-#endif
 }
 
 }  // namespace yllama
