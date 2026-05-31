@@ -70,6 +70,14 @@ The runner uses llama.cpp as its production backend. Tests still use an internal
 
 The runner can print its version, emit the startup `hello` event, parse the initial command set, render generation input, load a local GGUF model through llama.cpp, stream generated text, and report token usage.
 
+Current limitations:
+
+- One model per runner process.
+- One active generation request at a time.
+- No request queueing.
+- No network API.
+- llama.cpp and GGUF model files are supplied by the developer or packager.
+
 ## License
 
 BSD 3-Clause License.
