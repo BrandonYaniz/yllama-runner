@@ -14,6 +14,7 @@ The project does not download llama.cpp during configuration. Build or install l
 
 ```sh
 cmake -S . -B build \
+  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
   -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
   -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
   -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
@@ -24,6 +25,8 @@ ctest --test-dir build
 This path is currently verified on macOS with Apple clang. FreeBSD and Linux verification are planned before the beta build.
 
 ## llama.cpp options
+
+`YLLAMA_RELEASE_VERSION` sets the public version printed by `yllama-runner --version`. The default is the current beta release version.
 
 `YLLAMA_LLAMA_CPP_LIBRARIES` accepts a semicolon-separated list when the local llama.cpp build needs more than one library.
 
@@ -66,6 +69,7 @@ Example with an install rpath:
 
 ```sh
 cmake -S . -B build \
+  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
   -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
   -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
   -DYLLAMA_LLAMA_CPP_LIBRARIES='/path/to/llama/lib/libllama.dylib;/path/to/llama/lib/libggml.dylib' \
@@ -97,6 +101,7 @@ MODEL="$PWD/deps/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
 PREFIX="/tmp/yllama-runner-beta"
 
 cmake -S . -B build-beta-macos \
+  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
   -DYLLAMA_ENABLE_LLAMA_SMOKE_TEST=ON \
   -DYLLAMA_LLAMA_CPP_INCLUDE_DIR="$LLAMA_ROOT/include" \
   -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS="$LLAMA_ROOT/ggml/include" \

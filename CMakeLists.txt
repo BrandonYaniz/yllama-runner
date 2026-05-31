@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(
   yllama-runner
-  VERSION 0.1.0
+  VERSION 2026.5.31
   LANGUAGES CXX
 )
 
@@ -12,6 +12,9 @@ find_package(Threads REQUIRED)
 
 option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_SMOKE_TEST "Enable opt-in llama.cpp backend smoke test" OFF)
+set(YLLAMA_RELEASE_VERSION
+    "2026.05.31-beta.1"
+    CACHE STRING "Public yllama-runner release version")
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
     ""
     CACHE PATH "Path to llama.cpp public headers")
@@ -73,6 +76,9 @@ add_executable(yllama-runner
 )
 
 target_link_libraries(yllama-runner PRIVATE yllama_protocol)
+target_compile_definitions(yllama-runner PRIVATE
+  YLLAMA_RELEASE_VERSION="${YLLAMA_RELEASE_VERSION}"
+)
 
 if(MSVC)
   target_compile_options(yllama_protocol PRIVATE /W4)
@@ -95,7 +101,7 @@ if(YLLAMA_BUILD_TESTS)
   )
 
   set_tests_properties(yllama-runner-version PROPERTIES
-    PASS_REGULAR_EXPRESSION "yllama-runner 0.1.0"
+    PASS_REGULAR_EXPRESSION "yllama-runner ${YLLAMA_RELEASE_VERSION}"
   )
 
   add_executable(protocol_test

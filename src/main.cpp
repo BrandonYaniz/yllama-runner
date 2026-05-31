@@ -5,7 +5,11 @@
 
 namespace {
 
-constexpr std::string_view kVersion = "0.1.0";
+#ifndef YLLAMA_RELEASE_VERSION
+#define YLLAMA_RELEASE_VERSION "0.0.0-local"
+#endif
+
+constexpr std::string_view kVersion = YLLAMA_RELEASE_VERSION;
 
 void print_usage(std::ostream& out) {
   out << "usage: yllama-runner [--version]\n";
