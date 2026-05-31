@@ -37,5 +37,17 @@ int main() {
     assert(result.usage.output_tokens == 2);
   }
 
+  {
+    std::string delta;
+    const auto result = backend->generate(
+        command, [&](std::string_view text) { delta.append(text); },
+        []() { return true; });
+    assert(!result.error.has_value());
+    assert(delta.empty());
+    assert(result.finish_reason == "cancelled");
+    assert(result.usage.input_tokens == 1);
+    assert(result.usage.output_tokens == 0);
+  }
+
   return 0;
 }

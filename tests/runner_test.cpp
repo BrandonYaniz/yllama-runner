@@ -42,6 +42,40 @@ class BlockingBackend final : public yllama::Backend {
   bool configured_ = false;
 };
 
+class FailingGenerateBackend final : public yllama::Backend {
+ public:
+  yllama::ConfigureResult configure(
+      const yllama::ConfigureCommand& command) override {
+    configured_ = true;
+    return yllama::ConfigureResult{std::nullopt, command.model_path,
+                                   command.context_tokens};
+  }
+
+  yllama::GenerateResult generate(
+      const yllama::GenerateCommand&,
+      const yllama::DeltaCallback&,
+      const yllama::CancellationCallback&) override {
+    if (!configured_) {
+      return yllama::GenerateResult{
+          "error", yllama::Usage{},
+          yllama::BackendError{"not_configured",
+                               "Backend must be configured before generation."}};
+    }
+
+    return yllama::GenerateResult{
+        "error", yllama::Usage{},
+        yllama::BackendError{"invalid_settings",
+                             "max_tokens must be greater than zero."}};
+  }
+
+ private:
+  bool configured_ = false;
+};
+
+bool contains(const std::string& text, const std::string& needle) {
+  return text.find(needle) != std::string::npos;
+}
+
 std::string run_with_backend(yllama::Backend& backend,
                              const std::string& input,
                              int expected_status = 0) {
@@ -155,6 +189,60 @@ int main() {
            "\"context_tokens\":8192}\n"
            "{\"type\":\"started\",\"id\":\"req-001\"}\n"
            "{\"type\":\"cancelled\",\"id\":\"req-001\"}\n");
+  }
+
+  {
+    FailingGenerateBackend backend;
+    const std::string out = run_with_backend(
+        backend,
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":0}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(contains(out, "{\"type\":\"started\",\"id\":\"req-001\"}\n"));
+    assert(contains(out,
+                    "{\"type\":\"error\",\"id\":\"req-001\","
+                    "\"code\":\"invalid_settings\","
+                    "\"message\":\"max_tokens must be greater than zero.\"}\n"));
+  }
+
+  {
+    BlockingBackend backend;
+    const std::string out = run_with_backend(
+        backend,
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":128}}\n"
+        "{\"type\":\"generate\",\"id\":\"req-002\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Second\"},"
+        "\"settings\":{\"max_tokens\":128}}\n"
+        "{\"type\":\"configure\",\"id\":\"cfg-002\","
+        "\"model_path\":\"/models/other/model.gguf\","
+        "\"context_tokens\":4096,\"threads\":2}\n"
+        "{\"type\":\"cancel\",\"id\":\"missing\"}\n"
+        "{\"type\":\"cancel\",\"id\":\"req-001\"}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(contains(out,
+                    "{\"type\":\"error\",\"id\":\"req-002\","
+                    "\"code\":\"request_active\","
+                    "\"message\":\"Runner already has an active generation request.\"}\n"));
+    assert(contains(out,
+                    "{\"type\":\"error\",\"id\":\"cfg-002\","
+                    "\"code\":\"request_active\","
+                    "\"message\":\"Runner already has an active generation request.\"}\n"));
+    assert(contains(out,
+                    "{\"type\":\"error\",\"id\":\"missing\","
+                    "\"code\":\"request_not_active\","
+                    "\"message\":\"No active request matched the cancel command.\"}\n"));
+    assert(contains(out, "{\"type\":\"cancelled\",\"id\":\"req-001\"}\n"));
   }
 
   return 0;
