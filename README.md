@@ -58,6 +58,8 @@ ctest --test-dir build
 
 The CMake build and test path is currently verified on macOS with Apple clang.
 
+For the current beta verification flow, see [docs/beta-testing.md](docs/beta-testing.md).
+
 Install:
 
 ```sh
