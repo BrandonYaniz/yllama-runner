@@ -74,6 +74,7 @@ Settings:
 - `temperature`: optional number. Defaults to `0.8`. Use `0` for greedy decoding.
 - `top_p`: optional number in `(0, 1]`. Defaults to `0.95` when sampling is enabled.
 - `max_tokens`: optional integer greater than zero. Defaults to `128`.
+- `stream`: optional boolean. Defaults to `true`. Set to `false` to receive generated text in the terminal `completed` event instead of token `delta` events.
 - `stop`: optional array of strings. Matching stop text is not emitted in `delta` events.
 
 ## Generate Events
@@ -84,10 +85,22 @@ Settings:
 {"type":"completed","id":"req-001","finish_reason":"stop","usage":{"input_tokens":42,"output_tokens":91}}
 ```
 
+For compact output, send `"stream":false` in `settings`:
+
+```json
+{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Write one sentence."},"settings":{"stream":false}}
+```
+
+The generated text is returned in one terminal event:
+
+```json
+{"type":"completed","id":"req-001","finish_reason":"stop","usage":{"input_tokens":42,"output_tokens":91},"text":"One generated sentence."}
+```
+
 Event order:
 
 - `started` is emitted once generation begins.
-- zero or more `delta` events stream generated text.
+- zero or more `delta` events stream generated text when `stream` is omitted or `true`.
 - exactly one terminal event follows: `completed`, `cancelled`, or `error`.
 
 `completed.finish_reason` values:

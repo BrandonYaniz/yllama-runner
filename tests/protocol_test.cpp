@@ -27,6 +27,13 @@ int main() {
          "\"finish_reason\":\"stop\","
          "\"usage\":{\"input_tokens\":42,\"output_tokens\":91}}");
 
+  assert(yllama::completed_event("req-001", "stop", {42, 91},
+                                 "line 1\n\"quoted\"") ==
+         "{\"type\":\"completed\",\"id\":\"req-001\","
+         "\"finish_reason\":\"stop\","
+         "\"usage\":{\"input_tokens\":42,\"output_tokens\":91},"
+         "\"text\":\"line 1\\n\\\"quoted\\\"\"}");
+
   assert(yllama::cancelled_event("req-001") ==
          "{\"type\":\"cancelled\",\"id\":\"req-001\"}");
 

@@ -40,6 +40,7 @@ struct GenerateSettings {
   std::optional<double> temperature;
   std::optional<double> top_p;
   std::optional<int> max_tokens;
+  std::optional<bool> stream;
   std::vector<std::string> stop;
 };
 

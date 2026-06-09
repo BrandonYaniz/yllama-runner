@@ -65,6 +65,17 @@ fi
 printf '{"type":"generate","id":"req-002","input":{"kind":"prompt","prompt":"Complete this sentence in three words: Local models are"},"settings":{"max_tokens":8,"temperature":0}}\n' >&3
 wait_for '"type":"completed","id":"req-002"'
 
+printf '{"type":"generate","id":"req-compact","input":{"kind":"prompt","prompt":"Write two words about local models."},"settings":{"max_tokens":8,"temperature":0,"stream":false}}\n' >&3
+wait_for '"type":"completed","id":"req-compact"'
+
+if grep '"id":"req-compact"' "$out" | grep -q '"type":"delta"'; then
+  fail "compact request emitted delta events"
+fi
+
+if ! grep '"id":"req-compact"' "$out" | grep -q '"text":"'; then
+  fail "compact request did not include completed text"
+fi
+
 printf '{"type":"generate","id":"req-invalid","input":{"kind":"prompt","prompt":"This should fail before decoding."},"settings":{"max_tokens":0}}\n' >&3
 wait_for '"id":"req-invalid","code":"invalid_settings"'
 
@@ -86,10 +97,10 @@ grep -q '"id":"req-002"' "$out"
 started_count=$(grep -c '"type":"started"' "$out")
 completed_count=$(grep -c '"type":"completed"' "$out")
 
-if [ "$started_count" -ne 3 ]; then
-  fail "expected three started events"
+if [ "$started_count" -ne 4 ]; then
+  fail "expected four started events"
 fi
 
-if [ "$completed_count" -ne 2 ]; then
-  fail "expected two completed events"
+if [ "$completed_count" -ne 3 ]; then
+  fail "expected three completed events"
 fi

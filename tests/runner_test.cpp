@@ -139,6 +139,46 @@ int main() {
 
   {
     const std::string out = run_with_input(
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,\"stream\":false}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(out ==
+           "{\"type\":\"hello\",\"protocol_version\":1,"
+           "\"runner\":\"yllama-runner\","
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "{\"type\":\"ready\",\"id\":\"cfg-001\","
+           "\"model_path\":\"/models/fast/model.gguf\","
+           "\"context_tokens\":8192}\n"
+           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
+           "{\"type\":\"completed\",\"id\":\"req-001\","
+           "\"finish_reason\":\"stop\","
+           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2},"
+           "\"text\":\"fake response\"}\n");
+  }
+
+  {
+    const std::string out = run_with_input(
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,\"stream\":\"false\"}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(contains(out,
+                    "{\"type\":\"error\",\"id\":\"\","
+                    "\"code\":\"invalid_command\","
+                    "\"message\":\"stream must be a boolean\"}\n"));
+  }
+
+  {
+    const std::string out = run_with_input(
         "{\n"
         "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
 

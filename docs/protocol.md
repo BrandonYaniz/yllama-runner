@@ -48,6 +48,8 @@ Current capabilities:
 ["generate","stream","cancel"]
 ```
 
+The `stream` capability means generation can return token `delta` events. Callers that prefer compact output can send `"stream":false` in generate settings and read the final text from the `completed.text` field.
+
 Callers should treat unknown capabilities as informational and should not fail just because a new capability is present.
 
 ## Compatibility Rules

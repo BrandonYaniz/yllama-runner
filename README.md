@@ -21,7 +21,7 @@ This is useful for:
 
 - Load one local GGUF model.
 - Accept generation requests over stdio.
-- Stream token deltas as JSON Lines.
+- Stream token deltas as JSON Lines, or return compact single-event text when streaming is disabled.
 - Support cancellation.
 - Exit cleanly when requested.
 - Avoid HTTP, HTTPS, TCP, and public IPC.

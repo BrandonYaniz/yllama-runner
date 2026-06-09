@@ -84,7 +84,18 @@ Expected stdout events:
 - one or more `delta` events
 - `completed`
 
-stdout must contain only JSON Lines protocol events. llama.cpp diagnostics belong on stderr.
+stdout must contain only JSON Lines protocol events. llama.cpp diagnostics are suppressed by default; builds configured with `YLLAMA_ENABLE_LLAMA_LOGS=ON` may write llama.cpp diagnostics to stderr.
+
+For a compact output check, set `"stream":false`:
+
+```sh
+printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-compact","input":{"kind":"prompt","prompt":"Write one short sentence explaining what FreeBSD is."},"settings":{"max_tokens":64,"temperature":0,"stream":false}}\n{"type":"shutdown","id":"shutdown-001"}\n' "$MODEL" \
+  | "$RUNNER" > /tmp/yllama-compact-out.jsonl 2> /tmp/yllama-compact-err.log
+
+cat /tmp/yllama-compact-out.jsonl
+```
+
+Expected stdout events are `hello`, `ready`, `started`, and one `completed` event with a `text` field. No `delta` events should be emitted for that request.
 
 ## Manual Cancel Check
 
@@ -106,7 +117,7 @@ Expected stdout events when cancellation is observed:
 - `started`
 - `cancelled`
 
-Depending on hardware speed and model behavior, a short request may complete before cancellation is observed. If that happens, the terminal event may be `completed` instead of `cancelled`; stdout should still remain valid JSON Lines and stderr should contain only diagnostics.
+Depending on hardware speed and model behavior, a short request may complete before cancellation is observed. If that happens, the terminal event may be `completed` instead of `cancelled`; stdout should still remain valid JSON Lines.
 
 ## Reporting Failures
 
@@ -121,6 +132,6 @@ Include:
 - Full CMake configure command.
 - Failing command.
 - stdout JSONL output.
-- stderr diagnostics.
+- stderr diagnostics, if the build has llama.cpp logs enabled.
 
 Do not include private prompts, private model paths, or local secrets in reports.

@@ -23,6 +23,10 @@ std::string delta_event(std::string_view id, std::string_view text);
 std::string completed_event(std::string_view id,
                             std::string_view finish_reason,
                             Usage usage);
+std::string completed_event(std::string_view id,
+                            std::string_view finish_reason,
+                            Usage usage,
+                            std::string_view text);
 std::string cancelled_event(std::string_view id);
 std::string error_event(std::string_view id,
                         std::string_view code,

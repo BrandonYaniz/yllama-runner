@@ -88,7 +88,9 @@ It uses:
 
 - stdin for commands
 - stdout for protocol events
-- stderr for logs
+- stderr for runner diagnostics
+
+llama.cpp diagnostics are suppressed by default to keep manual runs readable. Configure with `YLLAMA_ENABLE_LLAMA_LOGS=ON` when investigating model loading or backend issues.
 
 ## macOS beta verification
 

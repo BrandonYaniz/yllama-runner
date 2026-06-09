@@ -102,10 +102,16 @@ void handle_generate(const GenerateCommand& command,
       std::thread([request_command, request, &backend, &out, &out_mutex]() {
         emit_locked(out, out_mutex, started_event(request_command.id));
 
+        const bool stream = request_command.settings.stream.value_or(true);
+        std::string buffered_text;
         GenerateResult result = backend.generate(
             request_command,
             [&](std::string_view text) {
-              emit_locked(out, out_mutex, delta_event(request_command.id, text));
+              if (stream) {
+                emit_locked(out, out_mutex, delta_event(request_command.id, text));
+              } else {
+                buffered_text.append(text);
+              }
             },
             [request]() { return request->cancel_requested.load(); });
 
@@ -115,10 +121,14 @@ void handle_generate(const GenerateCommand& command,
                                   result.error->message));
         } else if (result.finish_reason == "cancelled") {
           emit_locked(out, out_mutex, cancelled_event(request_command.id));
-        } else {
+        } else if (stream) {
           emit_locked(out, out_mutex,
                       completed_event(request_command.id, result.finish_reason,
                                       result.usage));
+        } else {
+          emit_locked(out, out_mutex,
+                      completed_event(request_command.id, result.finish_reason,
+                                      result.usage, buffered_text));
         }
 
         request->done.store(true);

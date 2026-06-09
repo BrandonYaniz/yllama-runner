@@ -321,6 +321,14 @@ std::optional<double> number_field(const JsonValue& object,
   return value->number;
 }
 
+std::optional<bool> bool_field(const JsonValue& object, std::string_view name) {
+  const JsonValue* value = field(object, name);
+  if (value == nullptr || value->type != JsonValue::Type::Bool) {
+    return std::nullopt;
+  }
+  return value->boolean;
+}
+
 ParseResult parse_configure(const JsonValue& root) {
   auto id = string_field(root, "id");
   auto model_path = string_field(root, "model_path");
@@ -402,9 +410,13 @@ ParseResult parse_generate(const JsonValue& root) {
     settings.temperature = number_field(*value, "temperature");
     settings.top_p = number_field(*value, "top_p");
     settings.max_tokens = int_field(*value, "max_tokens");
+    settings.stream = bool_field(*value, "stream");
 
     if (field(*value, "max_tokens") != nullptr && !settings.max_tokens) {
       return make_error("invalid_command", "max_tokens must be an integer");
+    }
+    if (field(*value, "stream") != nullptr && !settings.stream) {
+      return make_error("invalid_command", "stream must be a boolean");
     }
 
     if (const JsonValue* stop = field(*value, "stop"); stop != nullptr) {

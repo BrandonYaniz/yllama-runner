@@ -39,6 +39,10 @@ LlamaRuntime& runtime() {
   return instance;
 }
 
+#ifndef YLLAMA_ENABLE_LLAMA_LOGS
+void quiet_llama_log(ggml_log_level, const char*, void*) {}
+#endif
+
 struct LlamaModelDeleter {
   void operator()(llama_model* model) const {
     if (model != nullptr) {
@@ -165,6 +169,9 @@ std::size_t max_stop_size(const std::vector<std::string>& stops) {
 class LlamaBackend final : public Backend {
  public:
   LlamaBackend() {
+#ifndef YLLAMA_ENABLE_LLAMA_LOGS
+    llama_log_set(quiet_llama_log, nullptr);
+#endif
     static_cast<void>(runtime());
   }
 

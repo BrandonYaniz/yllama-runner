@@ -104,6 +104,22 @@ std::string completed_event(std::string_view id,
   return out.str();
 }
 
+std::string completed_event(std::string_view id,
+                            std::string_view finish_reason,
+                            Usage usage,
+                            std::string_view text) {
+  std::ostringstream out;
+  out << "{\"type\":\"completed\",";
+  append_json_field(out, "id", id);
+  out << ',';
+  append_json_field(out, "finish_reason", finish_reason);
+  out << ",\"usage\":{\"input_tokens\":" << usage.input_tokens
+      << ",\"output_tokens\":" << usage.output_tokens << "},";
+  append_json_field(out, "text", text);
+  out << '}';
+  return out.str();
+}
+
 std::string cancelled_event(std::string_view id) {
   std::ostringstream out;
   out << "{\"type\":\"cancelled\",";
