@@ -32,7 +32,7 @@ This path is currently verified on macOS with Apple clang. FreeBSD and Linux ver
 
 For local testing, `deps/` is ignored by git and can hold a temporary llama.cpp checkout or build artifacts. That directory is not part of the package.
 
-The runner loads the configured GGUF model during the `configure` command and streams generated token deltas during `generate`.
+The runner loads the configured GGUF model at process startup and streams generated text as binary stdout frames for each length-prefixed stdin prompt.
 
 An opt-in smoke test can run the built runner against a local GGUF model:
 
@@ -86,8 +86,8 @@ The runner does not listen on any network port.
 
 It uses:
 
-- stdin for commands
-- stdout for protocol events
+- stdin for prompt frames
+- stdout for generated text frames
 - stderr for runner diagnostics
 
 llama.cpp diagnostics are suppressed by default to keep manual runs readable. Configure with `YLLAMA_ENABLE_LLAMA_LOGS=ON` when investigating model loading or backend issues.

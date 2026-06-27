@@ -56,40 +56,38 @@ target_link_libraries(llama_cpp_external INTERFACE
   ${YLLAMA_LLAMA_CPP_LIBRARIES}
 )
 
-add_library(yllama_protocol
+add_library(yllama_core
   src/backend.cpp
-  src/jsonl.cpp
+  src/frame.cpp
   src/llama_backend.cpp
-  src/prompt.cpp
-  src/protocol.cpp
   src/runner.cpp
 )
 
-target_include_directories(yllama_protocol PUBLIC
+target_include_directories(yllama_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
-target_compile_features(yllama_protocol PUBLIC cxx_std_17)
-target_link_libraries(yllama_protocol PRIVATE llama_cpp_external Threads::Threads)
+target_compile_features(yllama_core PUBLIC cxx_std_17)
+target_link_libraries(yllama_core PRIVATE llama_cpp_external Threads::Threads)
 
 if(YLLAMA_ENABLE_LLAMA_LOGS)
-  target_compile_definitions(yllama_protocol PRIVATE YLLAMA_ENABLE_LLAMA_LOGS=1)
+  target_compile_definitions(yllama_core PRIVATE YLLAMA_ENABLE_LLAMA_LOGS=1)
 endif()
 
 add_executable(yllama-runner
   src/main.cpp
 )
 
-target_link_libraries(yllama-runner PRIVATE yllama_protocol)
+target_link_libraries(yllama-runner PRIVATE yllama_core)
 target_compile_definitions(yllama-runner PRIVATE
   YLLAMA_RELEASE_VERSION="${YLLAMA_RELEASE_VERSION}"
 )
 
 if(MSVC)
-  target_compile_options(yllama_protocol PRIVATE /W4)
+  target_compile_options(yllama_core PRIVATE /W4)
   target_compile_options(yllama-runner PRIVATE /W4)
 else()
-  target_compile_options(yllama_protocol PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(yllama_core PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(yllama-runner PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
@@ -109,62 +107,28 @@ if(YLLAMA_BUILD_TESTS)
     PASS_REGULAR_EXPRESSION "yllama-runner ${YLLAMA_RELEASE_VERSION}"
   )
 
-  add_executable(protocol_test
-    tests/protocol_test.cpp
+  add_executable(frame_test
+    tests/frame_test.cpp
   )
 
-  target_link_libraries(protocol_test PRIVATE yllama_protocol)
+  target_link_libraries(frame_test PRIVATE yllama_core)
 
   if(MSVC)
-    target_compile_options(protocol_test PRIVATE /W4)
+    target_compile_options(frame_test PRIVATE /W4)
   else()
-    target_compile_options(protocol_test PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(frame_test PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 
   add_test(
-    NAME protocol-events
-    COMMAND protocol_test
-  )
-
-  add_executable(jsonl_test
-    tests/jsonl_test.cpp
-  )
-
-  target_link_libraries(jsonl_test PRIVATE yllama_protocol)
-
-  if(MSVC)
-    target_compile_options(jsonl_test PRIVATE /W4)
-  else()
-    target_compile_options(jsonl_test PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
-
-  add_test(
-    NAME jsonl-commands
-    COMMAND jsonl_test
-  )
-
-  add_executable(prompt_test
-    tests/prompt_test.cpp
-  )
-
-  target_link_libraries(prompt_test PRIVATE yllama_protocol)
-
-  if(MSVC)
-    target_compile_options(prompt_test PRIVATE /W4)
-  else()
-    target_compile_options(prompt_test PRIVATE -Wall -Wextra -Wpedantic)
-  endif()
-
-  add_test(
-    NAME prompt-rendering
-    COMMAND prompt_test
+    NAME frame-io
+    COMMAND frame_test
   )
 
   add_executable(backend_test
     tests/backend_test.cpp
   )
 
-  target_link_libraries(backend_test PRIVATE yllama_protocol)
+  target_link_libraries(backend_test PRIVATE yllama_core)
 
   if(MSVC)
     target_compile_options(backend_test PRIVATE /W4)
@@ -181,7 +145,7 @@ if(YLLAMA_BUILD_TESTS)
     tests/runner_test.cpp
   )
 
-  target_link_libraries(runner_test PRIVATE yllama_protocol)
+  target_link_libraries(runner_test PRIVATE yllama_core)
 
   if(MSVC)
     target_compile_options(runner_test PRIVATE /W4)
@@ -209,6 +173,11 @@ if(YLLAMA_BUILD_TESTS)
     if(NOT SH_EXECUTABLE)
       message(FATAL_ERROR
         "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires a POSIX sh executable")
+    endif()
+    find_program(PYTHON3_EXECUTABLE python3)
+    if(NOT PYTHON3_EXECUTABLE)
+      message(FATAL_ERROR
+        "YLLAMA_ENABLE_LLAMA_SMOKE_TEST requires python3")
     endif()
     configure_file(
       tests/llama_smoke_test.sh.in

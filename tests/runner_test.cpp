@@ -1,355 +1,119 @@
 #include "runner.hpp"
 
 #include <cassert>
-#include <chrono>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <thread>
 
 #include "backend.hpp"
+#include "frame.hpp"
 
 namespace {
 
-class BlockingBackend final : public yllama::Backend {
+class EchoBackend final : public yllama::Backend {
  public:
-  yllama::ConfigureResult configure(
-      const yllama::ConfigureCommand& command) override {
-    configured_ = true;
-    return yllama::ConfigureResult{std::nullopt, command.model_path,
-                                   command.context_tokens};
+  yllama::ConfigureResult configure(const yllama::RunnerConfig& config) override {
+    ++configure_count;
+    return yllama::ConfigureResult{std::nullopt, config.model_path,
+                                   config.context_tokens};
   }
 
   yllama::GenerateResult generate(
-      const yllama::GenerateCommand&,
-      const yllama::DeltaCallback&,
-      const yllama::CancellationCallback& is_cancelled) override {
-    if (!configured_) {
-      return yllama::GenerateResult{
-          "error", yllama::Usage{},
-          yllama::BackendError{"not_configured",
-                               "Backend must be configured before generation."}};
-    }
-
-    while (!is_cancelled()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    return yllama::GenerateResult{"cancelled", yllama::Usage{}, std::nullopt};
-  }
-
- private:
-  bool configured_ = false;
-};
-
-class FailingGenerateBackend final : public yllama::Backend {
- public:
-  yllama::ConfigureResult configure(
-      const yllama::ConfigureCommand& command) override {
-    configured_ = true;
-    return yllama::ConfigureResult{std::nullopt, command.model_path,
-                                   command.context_tokens};
-  }
-
-  yllama::GenerateResult generate(
-      const yllama::GenerateCommand&,
-      const yllama::DeltaCallback&,
+      std::string_view prompt,
+      const yllama::GenerateOptions&,
+      const yllama::DeltaCallback& on_delta,
       const yllama::CancellationCallback&) override {
-    if (!configured_) {
+    ++generate_count;
+    if (prompt == "fail") {
       return yllama::GenerateResult{
-          "error", yllama::Usage{},
-          yllama::BackendError{"not_configured",
-                               "Backend must be configured before generation."}};
+          yllama::BackendError{"invalid_prompt", "prompt rejected"}};
     }
-
-    return yllama::GenerateResult{
-        "error", yllama::Usage{},
-        yllama::BackendError{"invalid_settings",
-                             "max_tokens must be greater than zero."}};
+    on_delta("echo:");
+    on_delta(prompt);
+    return yllama::GenerateResult{std::nullopt};
   }
 
- private:
-  bool configured_ = false;
+  int configure_count = 0;
+  int generate_count = 0;
 };
 
-bool contains(const std::string& text, const std::string& needle) {
-  return text.find(needle) != std::string::npos;
+std::string u32_le(unsigned int value) {
+  std::string out(4, '\0');
+  out[0] = static_cast<char>(value & 0xff);
+  out[1] = static_cast<char>((value >> 8) & 0xff);
+  out[2] = static_cast<char>((value >> 16) & 0xff);
+  out[3] = static_cast<char>((value >> 24) & 0xff);
+  return out;
 }
 
-std::string run_with_backend(yllama::Backend& backend,
-                             const std::string& input,
-                             int expected_status = 0) {
-  std::istringstream in(input);
-  std::ostringstream out;
-  std::ostringstream err;
-
-  const int status = yllama::run_stdio(in, out, err, backend);
-  assert(status == expected_status);
-  assert(err.str().empty());
-  return out.str();
+std::string prompt_frame(const std::string& prompt) {
+  return u32_le(static_cast<unsigned int>(prompt.size())) + prompt;
 }
 
-std::string run_with_input(const std::string& input, int expected_status = 0) {
-  std::unique_ptr<yllama::Backend> backend = yllama::make_fake_backend();
-  return run_with_backend(*backend, input, expected_status);
+std::string chunk_frame(const std::string& text) {
+  return std::string(1, static_cast<char>(yllama::kFrameChunk)) +
+         u32_le(static_cast<unsigned int>(text.size())) + text;
+}
+
+std::string done_frame() {
+  return std::string(1, static_cast<char>(yllama::kFrameDone));
+}
+
+std::string error_frame(const std::string& text) {
+  std::string out(1, static_cast<char>(yllama::kFrameError));
+  out.push_back(static_cast<char>(text.size() & 0xff));
+  out.push_back(static_cast<char>((text.size() >> 8) & 0xff));
+  out += text;
+  return out;
 }
 
 }  // namespace
 
 int main() {
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+  const yllama::RunnerConfig config{"/models/fast/model.gguf", 8192, 4};
+  const yllama::GenerateOptions options;
 
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n");
+  {
+    EchoBackend backend;
+    std::istringstream in(prompt_frame("one") + prompt_frame("two"));
+    std::ostringstream out;
+    std::ostringstream err;
+
+    const int status =
+        yllama::run_stdio(in, out, err, config, options, backend);
+    assert(status == 0);
+    assert(err.str().empty());
+    assert(backend.configure_count == 1);
+    assert(backend.generate_count == 2);
+    assert(out.str() == chunk_frame("echo:") + chunk_frame("one") +
+                            done_frame() + chunk_frame("echo:") +
+                            chunk_frame("two") + done_frame());
   }
 
   {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+    EchoBackend backend;
+    std::istringstream in(prompt_frame("fail"));
+    std::ostringstream out;
+    std::ostringstream err;
 
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
-           "{\"type\":\"delta\",\"id\":\"req-001\",\"text\":\"fake response\"}\n"
-           "{\"type\":\"completed\",\"id\":\"req-001\","
-           "\"finish_reason\":\"stop\","
-           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}\n");
+    const int status =
+        yllama::run_stdio(in, out, err, config, options, backend);
+    assert(status == 0);
+    assert(err.str().empty());
+    assert(out.str() == error_frame("invalid_prompt: prompt rejected"));
   }
 
   {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8,\"stream\":false}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+    EchoBackend backend;
+    std::istringstream in(std::string("\x03\x00", 2));
+    std::ostringstream out;
+    std::ostringstream err;
 
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
-           "{\"type\":\"completed\",\"id\":\"req-001\","
-           "\"finish_reason\":\"stop\","
-           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2},"
-           "\"text\":\"fake response\"}\n");
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8,"
-        "\"output\":{\"format\":\"json\",\"delivery\":\"complete\"}}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
-           "{\"type\":\"completed\",\"id\":\"req-001\","
-           "\"finish_reason\":\"stop\","
-           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2},"
-           "\"text\":\"fake response\"}\n");
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8,"
-        "\"output\":{\"format\":\"text\",\"delivery\":\"stream\"}}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "fake response");
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8,"
-        "\"output\":{\"format\":\"text\",\"delivery\":\"complete\"}}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "fake response");
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8,\"stream\":\"false\"}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(contains(out,
-                    "{\"type\":\"error\",\"id\":\"\","
-                    "\"code\":\"invalid_command\","
-                    "\"message\":\"stream must be a boolean\"}\n"));
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"error\",\"id\":\"\","
-           "\"code\":\"invalid_json\","
-           "\"message\":\"expected string\"}\n");
-  }
-
-  {
-    const std::string out = run_with_input(
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":8}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"error\",\"id\":\"req-001\","
-           "\"code\":\"not_configured\","
-           "\"message\":\"Runner must be configured before generation.\"}\n");
-  }
-
-  {
-    BlockingBackend backend;
-    const std::string out = run_with_backend(
-        backend,
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":128}}\n"
-        "{\"type\":\"cancel\",\"id\":\"req-001\"}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(out ==
-           "{\"type\":\"hello\",\"protocol_version\":1,"
-           "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
-           "{\"type\":\"ready\",\"id\":\"cfg-001\","
-           "\"model_path\":\"/models/fast/model.gguf\","
-           "\"context_tokens\":8192}\n"
-           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
-           "{\"type\":\"cancelled\",\"id\":\"req-001\"}\n");
-  }
-
-  {
-    FailingGenerateBackend backend;
-    const std::string out = run_with_backend(
-        backend,
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":0}}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(contains(out, "{\"type\":\"started\",\"id\":\"req-001\"}\n"));
-    assert(contains(out,
-                    "{\"type\":\"error\",\"id\":\"req-001\","
-                    "\"code\":\"invalid_settings\","
-                    "\"message\":\"max_tokens must be greater than zero.\"}\n"));
-  }
-
-  {
-    BlockingBackend backend;
-    const std::string out = run_with_backend(
-        backend,
-        "{\"type\":\"configure\",\"id\":\"cfg-001\","
-        "\"model_path\":\"/models/fast/model.gguf\","
-        "\"context_tokens\":8192,\"threads\":4}\n"
-        "{\"type\":\"generate\",\"id\":\"req-001\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
-        "\"settings\":{\"max_tokens\":128}}\n"
-        "{\"type\":\"generate\",\"id\":\"req-002\","
-        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Second\"},"
-        "\"settings\":{\"max_tokens\":128}}\n"
-        "{\"type\":\"configure\",\"id\":\"cfg-002\","
-        "\"model_path\":\"/models/other/model.gguf\","
-        "\"context_tokens\":4096,\"threads\":2}\n"
-        "{\"type\":\"cancel\",\"id\":\"missing\"}\n"
-        "{\"type\":\"cancel\",\"id\":\"req-001\"}\n"
-        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
-
-    assert(contains(out,
-                    "{\"type\":\"error\",\"id\":\"req-002\","
-                    "\"code\":\"request_active\","
-                    "\"message\":\"Runner already has an active generation request.\"}\n"));
-    assert(contains(out,
-                    "{\"type\":\"error\",\"id\":\"cfg-002\","
-                    "\"code\":\"request_active\","
-                    "\"message\":\"Runner already has an active generation request.\"}\n"));
-    assert(contains(out,
-                    "{\"type\":\"error\",\"id\":\"missing\","
-                    "\"code\":\"request_not_active\","
-                    "\"message\":\"No active request matched the cancel command.\"}\n"));
-    assert(contains(out, "{\"type\":\"cancelled\",\"id\":\"req-001\"}\n"));
+    const int status =
+        yllama::run_stdio(in, out, err, config, options, backend);
+    assert(status == 1);
+    assert(out.str().empty());
+    assert(err.str() == "truncated prompt length\n");
   }
 
   return 0;

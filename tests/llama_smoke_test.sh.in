@@ -4,103 +4,72 @@ set -eu
 runner=$1
 model=$2
 
-in=$(mktemp -u "${TMPDIR:-/tmp}/yllama-smoke-in.XXXXXX")
-out=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-out.XXXXXX")
-err=$(mktemp "${TMPDIR:-/tmp}/yllama-smoke-err.XXXXXX")
-pid=
+"@PYTHON3_EXECUTABLE@" - "$runner" "$model" <<'PY'
+import struct
+import subprocess
+import sys
 
-cleanup() {
-  if [ -n "$pid" ]; then
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-  fi
-  rm -f "$in" "$out" "$err"
-}
-trap cleanup EXIT
+runner = sys.argv[1]
+model = sys.argv[2]
 
-fail() {
-  printf '%s\n' "$1"
-  printf '%s\n' "--- stdout ---"
-  cat "$out"
-  printf '%s\n' "--- stderr ---"
-  cat "$err"
-  exit 1
-}
+prompt = b"Complete this sentence in four words: The sky is"
+proc = subprocess.Popen(
+    [
+        runner,
+        "--model",
+        model,
+        "--ctx",
+        "1024",
+        "--threads",
+        "4",
+        "--max-tokens",
+        "8",
+        "--temperature",
+        "0",
+    ],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
 
-wait_for() {
-  pattern=$1
-  attempts=0
-  while [ "$attempts" -lt 100 ]; do
-    if grep -q "$pattern" "$out"; then
-      return 0
-    fi
-    attempts=$((attempts + 1))
-    sleep 0.1
-  done
-  fail "timed out waiting for $pattern"
-}
+assert proc.stdin is not None
+assert proc.stdout is not None
 
-assert_stdout_is_jsonl() {
-  if [ -s "$out" ] && grep -v '^{.*}$' "$out" >/dev/null; then
-    fail "stdout contained a non-JSONL line"
-  fi
-}
+proc.stdin.write(struct.pack("<I", len(prompt)))
+proc.stdin.write(prompt)
+proc.stdin.flush()
 
-mkfifo "$in"
-"$runner" < "$in" > "$out" 2> "$err" &
-pid=$!
+chunks = []
+while True:
+    tag = proc.stdout.read(1)
+    if tag == b"":
+        raise SystemExit("runner closed stdout before done frame")
+    if tag == b"\x01":
+        size_bytes = proc.stdout.read(4)
+        if len(size_bytes) != 4:
+            raise SystemExit("truncated chunk length")
+        size = struct.unpack("<I", size_bytes)[0]
+        chunk = proc.stdout.read(size)
+        if len(chunk) != size:
+            raise SystemExit("truncated chunk payload")
+        chunks.append(chunk)
+        continue
+    if tag == b"\x02":
+        break
+    if tag == b"\x03":
+        size_bytes = proc.stdout.read(2)
+        if len(size_bytes) != 2:
+            raise SystemExit("truncated error length")
+        size = struct.unpack("<H", size_bytes)[0]
+        message = proc.stdout.read(size).decode("utf-8", errors="replace")
+        raise SystemExit("runner error frame: " + message)
+    raise SystemExit(f"unknown frame tag: {tag!r}")
 
-exec 3>"$in"
-
-printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n' "$model" >&3
-wait_for '"type":"ready"'
-
-printf '{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Complete this sentence in four words: The sky is"},"settings":{"max_tokens":8,"temperature":0,"stop":[" blue"]}}\n' >&3
-wait_for '"id":"req-001","finish_reason":"stop"'
-
-if grep -q '"type":"delta".* blue' "$out"; then
-  fail "stop sequence leaked into streamed delta text"
-fi
-
-printf '{"type":"generate","id":"req-002","input":{"kind":"prompt","prompt":"Complete this sentence in three words: Local models are"},"settings":{"max_tokens":8,"temperature":0}}\n' >&3
-wait_for '"type":"completed","id":"req-002"'
-
-printf '{"type":"generate","id":"req-compact","input":{"kind":"prompt","prompt":"Write two words about local models."},"settings":{"max_tokens":8,"temperature":0,"stream":false}}\n' >&3
-wait_for '"type":"completed","id":"req-compact"'
-
-if grep '"id":"req-compact"' "$out" | grep -q '"type":"delta"'; then
-  fail "compact request emitted delta events"
-fi
-
-if ! grep '"id":"req-compact"' "$out" | grep -q '"text":"'; then
-  fail "compact request did not include completed text"
-fi
-
-printf '{"type":"generate","id":"req-invalid","input":{"kind":"prompt","prompt":"This should fail before decoding."},"settings":{"max_tokens":0}}\n' >&3
-wait_for '"id":"req-invalid","code":"invalid_settings"'
-
-printf '{"type":"shutdown","id":"shutdown-001"}\n' >&3
-exec 3>&-
-wait "$pid"
-pid=
-
-assert_stdout_is_jsonl
-
-if grep '"type":"error"' "$out" | grep -v '"id":"req-invalid","code":"invalid_settings"' >/dev/null; then
-  fail "runner emitted an unexpected error event"
-fi
-
-grep -q '"type":"ready"' "$out"
-grep -q '"id":"req-001"' "$out"
-grep -q '"id":"req-002"' "$out"
-
-started_count=$(grep -c '"type":"started"' "$out")
-completed_count=$(grep -c '"type":"completed"' "$out")
-
-if [ "$started_count" -ne 4 ]; then
-  fail "expected four started events"
-fi
-
-if [ "$completed_count" -ne 3 ]; then
-  fail "expected three completed events"
-fi
+proc.stdin.close()
+stderr = proc.stderr.read().decode("utf-8", errors="replace")
+status = proc.wait(timeout=10)
+if status != 0:
+    raise SystemExit(f"runner exited {status}: {stderr}")
+if not b"".join(chunks).strip():
+    raise SystemExit("runner produced empty output")
+PY

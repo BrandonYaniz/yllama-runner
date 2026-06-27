@@ -1,8 +1,7 @@
 # Beta Testing
 
-This guide is for testers building `yllama-runner` from source with a local llama.cpp build and a local GGUF model.
-
-The beta runner does not download llama.cpp or model files. Keep those dependencies outside the package, or under ignored local test directories such as `deps/`.
+This guide is for testers building `yllama-runner` from source with a local
+llama.cpp build and a local GGUF model.
 
 ## Prerequisites
 
@@ -10,12 +9,7 @@ The beta runner does not download llama.cpp or model files. Keep those dependenc
 - A C++17 compiler.
 - A built llama.cpp checkout or install.
 - A small GGUF model suitable for smoke testing.
-
-On macOS, the verified local test setup uses:
-
-- AppleClang 21.0.0.
-- llama.cpp built for CPU.
-- `SmolLM2-135M-Instruct-Q4_K_M.gguf` as a lightweight test model.
+- `python3` when enabling the opt-in llama smoke test.
 
 ## Build and Test
 
@@ -57,67 +51,55 @@ cmake --install build-beta-macos
 "$PREFIX/libexec/yllama-runner" --version
 ```
 
-Expected version:
+## Manual Framed Generate Check
 
-```text
-yllama-runner 2026.05.31-beta.1
-```
-
-## Manual Generate Check
-
-Run a small prompt through the installed runner:
+Run one framed request through the installed runner:
 
 ```sh
 RUNNER="$PREFIX/libexec/yllama-runner"
 
-printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-generate","input":{"kind":"prompt","prompt":"Complete this sentence in four words: The sky is"},"settings":{"max_tokens":8,"temperature":0,"stop":[" blue"]}}\n{"type":"shutdown","id":"shutdown-001"}\n' "$MODEL" \
-  | "$RUNNER" > /tmp/yllama-generate-out.jsonl 2> /tmp/yllama-generate-err.log
+python3 - "$RUNNER" "$MODEL" <<'PY'
+import struct
+import subprocess
+import sys
 
-sed -n '1,20p' /tmp/yllama-generate-out.jsonl
+runner, model = sys.argv[1], sys.argv[2]
+prompt = b"Complete this sentence in four words: The sky is"
+proc = subprocess.Popen(
+    [runner, "--model", model, "--ctx", "1024", "--threads", "4",
+     "--max-tokens", "8", "--temperature", "0"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+proc.stdin.write(struct.pack("<I", len(prompt)) + prompt)
+proc.stdin.close()
+
+while True:
+    tag = proc.stdout.read(1)
+    if tag == b"\x01":
+        size = struct.unpack("<I", proc.stdout.read(4))[0]
+        sys.stdout.buffer.write(proc.stdout.read(size))
+    elif tag == b"\x02":
+        break
+    elif tag == b"\x03":
+        size = struct.unpack("<H", proc.stdout.read(2))[0]
+        raise SystemExit(proc.stdout.read(size).decode())
+    else:
+        raise SystemExit(f"unexpected frame tag: {tag!r}")
+
+status = proc.wait()
+if status:
+    raise SystemExit(proc.stderr.read().decode())
+PY
 ```
 
-Expected stdout events:
+Expected stdout is generated model text. stderr is diagnostics only.
 
-- `hello`
-- `ready`
-- `started`
-- one or more `delta` events
-- `completed`
+## Cancellation Check
 
-For the default JSON output mode, stdout must contain only JSON Lines protocol events. llama.cpp diagnostics are suppressed by default; builds configured with `YLLAMA_ENABLE_LLAMA_LOGS=ON` may write llama.cpp diagnostics to stderr.
-
-For a compact output check, set `"stream":false`:
-
-```sh
-printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-compact","input":{"kind":"prompt","prompt":"Write one short sentence explaining what FreeBSD is."},"settings":{"max_tokens":64,"temperature":0,"stream":false}}\n{"type":"shutdown","id":"shutdown-001"}\n' "$MODEL" \
-  | "$RUNNER" > /tmp/yllama-compact-out.jsonl 2> /tmp/yllama-compact-err.log
-
-cat /tmp/yllama-compact-out.jsonl
-```
-
-Expected stdout events are `hello`, `ready`, `started`, and one `completed` event with a `text` field. No `delta` events should be emitted for that request.
-
-## Manual Cancel Check
-
-Run a request and immediately cancel it:
-
-```sh
-RUNNER="$PREFIX/libexec/yllama-runner"
-
-printf '{"type":"configure","id":"cfg-001","model_path":"%s","context_tokens":1024,"threads":4}\n{"type":"generate","id":"req-cancel","input":{"kind":"prompt","prompt":"Write a long paragraph about local inference."},"settings":{"max_tokens":128,"temperature":0}}\n{"type":"cancel","id":"req-cancel"}\n{"type":"shutdown","id":"shutdown-001"}\n' "$MODEL" \
-  | "$RUNNER" > /tmp/yllama-cancel-out.jsonl 2> /tmp/yllama-cancel-err.log
-
-sed -n '1,20p' /tmp/yllama-cancel-out.jsonl
-```
-
-Expected stdout events when cancellation is observed:
-
-- `hello`
-- `ready`
-- `started`
-- `cancelled`
-
-Depending on hardware speed and model behavior, a short request may complete before cancellation is observed. If that happens, the terminal event may be `completed` instead of `cancelled`; stdout should still remain valid JSON Lines.
+There is no in-band cancel command. Parent processes cancel by terminating the
+runner process and starting a fresh resident runner when needed.
 
 ## Reporting Failures
 
@@ -131,7 +113,7 @@ Include:
 - GGUF model name and quantization.
 - Full CMake configure command.
 - Failing command.
-- stdout output.
+- stdout frame behavior.
 - stderr diagnostics, if the build has llama.cpp logs enabled.
 
 Do not include private prompts, private model paths, or local secrets in reports.
