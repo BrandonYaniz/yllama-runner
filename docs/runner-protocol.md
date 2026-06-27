@@ -1,12 +1,12 @@
 # Runner Protocol
 
-`yllama-runner` speaks JSON Lines over stdio.
+`yllama-runner` accepts JSON Lines commands over stdio.
 
 - stdin receives commands.
-- stdout emits protocol events.
+- stdout emits protocol events and, when requested, raw generated text.
 - stderr is reserved for logs.
 
-Each message is one UTF-8 JSON object followed by a newline.
+Each stdin message is one UTF-8 JSON object followed by a newline.
 
 The runner handles one configured model and one active generation request at a time. A supervisor may send `cancel` while generation is active; other commands sent during active generation are rejected with `request_active`.
 
@@ -21,7 +21,7 @@ The `cancel` command is the exception to normal command-response pairing: its `i
 On startup, the runner sends:
 
 ```json
-{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel"]}
+{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel","output_modes"]}
 ```
 
 Fields:
@@ -74,10 +74,25 @@ Settings:
 - `temperature`: optional number. Defaults to `0.8`. Use `0` for greedy decoding.
 - `top_p`: optional number in `(0, 1]`. Defaults to `0.95` when sampling is enabled.
 - `max_tokens`: optional integer greater than zero. Defaults to `128`.
-- `stream`: optional boolean. Defaults to `true`. Set to `false` to receive generated text in the terminal `completed` event instead of token `delta` events.
+- `output`: optional object that selects generation output shape. Defaults to `{"format":"json","delivery":"stream"}`.
+- `stream`: optional legacy boolean. Defaults to `true`. Set to `false` to receive JSON completed output. Ignored when `output` is present.
 - `stop`: optional array of strings. Matching stop text is not emitted in `delta` events.
 
-## Generate Events
+Output settings:
+
+- `output.format`: `json` or `text`.
+- `output.delivery`: `stream` or `complete`.
+
+The four supported combinations are:
+
+- `{"format":"json","delivery":"stream"}`: emits JSON `started`, JSON `delta` events, then JSON `completed`.
+- `{"format":"json","delivery":"complete"}`: emits JSON `started`, then one JSON `completed` event with `text`.
+- `{"format":"text","delivery":"stream"}`: writes raw generated text chunks as they arrive.
+- `{"format":"text","delivery":"complete"}`: writes raw generated text after generation finishes.
+
+Protocol failures and cancellation are still reported as JSON events.
+
+## JSON Generate Events
 
 ```json
 {"type":"started","id":"req-001"}
@@ -97,11 +112,27 @@ The generated text is returned in one terminal event:
 {"type":"completed","id":"req-001","finish_reason":"stop","usage":{"input_tokens":42,"output_tokens":91},"text":"One generated sentence."}
 ```
 
-Event order:
+The equivalent explicit output setting is:
+
+```json
+{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Write one sentence."},"settings":{"output":{"format":"json","delivery":"complete"}}}
+```
+
+JSON event order:
 
 - `started` is emitted once generation begins.
-- zero or more `delta` events stream generated text when `stream` is omitted or `true`.
+- zero or more `delta` events stream generated text when JSON stream output is selected.
 - exactly one terminal event follows: `completed`, `cancelled`, or `error`.
+
+## Text Output
+
+Text output writes only generated text for successful generation. It does not emit `started`, `delta`, or `completed` events for that request.
+
+```json
+{"type":"generate","id":"req-001","input":{"kind":"prompt","prompt":"Write one sentence."},"settings":{"output":{"format":"text","delivery":"stream"}}}
+```
+
+With `delivery:"stream"`, stdout receives generated text chunks immediately. With `delivery:"complete"`, stdout receives the same raw text after generation finishes.
 
 `completed.finish_reason` values:
 

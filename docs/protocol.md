@@ -1,6 +1,6 @@
 # yllama-runner Protocol
 
-`yllama-runner` communicates over JSON Lines.
+`yllama-runner` accepts JSON Lines commands and can emit either JSON protocol events or raw generated text, depending on each generation request.
 
 The runner is intended to be started by a parent process. It does not listen on a network socket and does not behave as a user-facing daemon.
 
@@ -8,11 +8,11 @@ The runner is intended to be started by a parent process. It does not listen on 
 
 ```text
 stdin   JSON Lines commands from the parent process
-stdout  JSON Lines events from the runner
+stdout  JSON Lines events or requested raw generated text from the runner
 stderr  human-readable logs and diagnostics
 ```
 
-stdout is part of the machine-readable protocol. Logs should not be written to stdout.
+stdout is part of the parent-facing output channel. Logs should not be written to stdout.
 
 stderr is not part of the machine-readable protocol. Parent processes may capture it for diagnostics, but should not depend on it for normal protocol behavior.
 
@@ -33,7 +33,7 @@ The runner should emit a startup `hello` event before accepting generation work.
 Example:
 
 ```json
-{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel"]}
+{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel","output_modes"]}
 ```
 
 Parent processes should verify `protocol_version` and inspect `capabilities`.
@@ -45,10 +45,20 @@ Capability flags describe optional or behaviorally important features.
 Current capabilities:
 
 ```json
-["generate","stream","cancel"]
+["generate","stream","cancel","output_modes"]
 ```
 
-The `stream` capability means generation can return token `delta` events. Callers that prefer compact output can send `"stream":false` in generate settings and read the final text from the `completed.text` field.
+The `stream` capability means generation can return token `delta` events. Callers that prefer compact JSON output can send `"stream":false` in generate settings and read the final text from the `completed.text` field.
+
+The `output_modes` capability means generation can select output `format` and `delivery`.
+
+Generation settings can also include `output`:
+
+```json
+{"format":"text","delivery":"stream"}
+```
+
+`format` may be `json` or `text`. `delivery` may be `stream` or `complete`.
 
 Callers should treat unknown capabilities as informational and should not fail just because a new capability is present.
 

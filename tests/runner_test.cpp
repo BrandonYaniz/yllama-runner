@@ -107,7 +107,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"ready\",\"id\":\"cfg-001\","
            "\"model_path\":\"/models/fast/model.gguf\","
            "\"context_tokens\":8192}\n");
@@ -126,7 +126,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"ready\",\"id\":\"cfg-001\","
            "\"model_path\":\"/models/fast/model.gguf\","
            "\"context_tokens\":8192}\n"
@@ -150,7 +150,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"ready\",\"id\":\"cfg-001\","
            "\"model_path\":\"/models/fast/model.gguf\","
            "\"context_tokens\":8192}\n"
@@ -159,6 +159,73 @@ int main() {
            "\"finish_reason\":\"stop\","
            "\"usage\":{\"input_tokens\":1,\"output_tokens\":2},"
            "\"text\":\"fake response\"}\n");
+  }
+
+  {
+    const std::string out = run_with_input(
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,"
+        "\"output\":{\"format\":\"json\",\"delivery\":\"complete\"}}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(out ==
+           "{\"type\":\"hello\",\"protocol_version\":1,"
+           "\"runner\":\"yllama-runner\","
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
+           "{\"type\":\"ready\",\"id\":\"cfg-001\","
+           "\"model_path\":\"/models/fast/model.gguf\","
+           "\"context_tokens\":8192}\n"
+           "{\"type\":\"started\",\"id\":\"req-001\"}\n"
+           "{\"type\":\"completed\",\"id\":\"req-001\","
+           "\"finish_reason\":\"stop\","
+           "\"usage\":{\"input_tokens\":1,\"output_tokens\":2},"
+           "\"text\":\"fake response\"}\n");
+  }
+
+  {
+    const std::string out = run_with_input(
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,"
+        "\"output\":{\"format\":\"text\",\"delivery\":\"stream\"}}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(out ==
+           "{\"type\":\"hello\",\"protocol_version\":1,"
+           "\"runner\":\"yllama-runner\","
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
+           "{\"type\":\"ready\",\"id\":\"cfg-001\","
+           "\"model_path\":\"/models/fast/model.gguf\","
+           "\"context_tokens\":8192}\n"
+           "fake response");
+  }
+
+  {
+    const std::string out = run_with_input(
+        "{\"type\":\"configure\",\"id\":\"cfg-001\","
+        "\"model_path\":\"/models/fast/model.gguf\","
+        "\"context_tokens\":8192,\"threads\":4}\n"
+        "{\"type\":\"generate\",\"id\":\"req-001\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"max_tokens\":8,"
+        "\"output\":{\"format\":\"text\",\"delivery\":\"complete\"}}}\n"
+        "{\"type\":\"shutdown\",\"id\":\"shutdown-001\"}\n");
+
+    assert(out ==
+           "{\"type\":\"hello\",\"protocol_version\":1,"
+           "\"runner\":\"yllama-runner\","
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
+           "{\"type\":\"ready\",\"id\":\"cfg-001\","
+           "\"model_path\":\"/models/fast/model.gguf\","
+           "\"context_tokens\":8192}\n"
+           "fake response");
   }
 
   {
@@ -185,7 +252,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"error\",\"id\":\"\","
            "\"code\":\"invalid_json\","
            "\"message\":\"expected string\"}\n");
@@ -201,7 +268,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"error\",\"id\":\"req-001\","
            "\"code\":\"not_configured\","
            "\"message\":\"Runner must be configured before generation.\"}\n");
@@ -223,7 +290,7 @@ int main() {
     assert(out ==
            "{\"type\":\"hello\",\"protocol_version\":1,"
            "\"runner\":\"yllama-runner\","
-           "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}\n"
+           "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}\n"
            "{\"type\":\"ready\",\"id\":\"cfg-001\","
            "\"model_path\":\"/models/fast/model.gguf\","
            "\"context_tokens\":8192}\n"

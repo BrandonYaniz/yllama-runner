@@ -40,6 +40,14 @@ void emit_locked(std::ostream& out,
   emit(out, event_json);
 }
 
+void emit_text_locked(std::ostream& out,
+                      std::mutex& out_mutex,
+                      std::string_view text) {
+  std::lock_guard<std::mutex> lock(out_mutex);
+  out << text;
+  out.flush();
+}
+
 void join_active_request(std::unique_ptr<ActiveRequest>& active) {
   if (active && active->worker.joinable()) {
     active->worker.join();
@@ -100,15 +108,20 @@ void handle_generate(const GenerateCommand& command,
 
   request->worker =
       std::thread([request_command, request, &backend, &out, &out_mutex]() {
-        emit_locked(out, out_mutex, started_event(request_command.id));
+        const bool json_output = request_command.settings.output_format == "json";
+        const bool stream = request_command.settings.output_delivery == "stream";
+        if (json_output) {
+          emit_locked(out, out_mutex, started_event(request_command.id));
+        }
 
-        const bool stream = request_command.settings.stream.value_or(true);
         std::string buffered_text;
         GenerateResult result = backend.generate(
             request_command,
             [&](std::string_view text) {
-              if (stream) {
+              if (json_output && stream) {
                 emit_locked(out, out_mutex, delta_event(request_command.id, text));
+              } else if (!json_output && stream) {
+                emit_text_locked(out, out_mutex, text);
               } else {
                 buffered_text.append(text);
               }
@@ -121,14 +134,16 @@ void handle_generate(const GenerateCommand& command,
                                   result.error->message));
         } else if (result.finish_reason == "cancelled") {
           emit_locked(out, out_mutex, cancelled_event(request_command.id));
-        } else if (stream) {
+        } else if (json_output && stream) {
           emit_locked(out, out_mutex,
                       completed_event(request_command.id, result.finish_reason,
                                       result.usage));
-        } else {
+        } else if (json_output) {
           emit_locked(out, out_mutex,
                       completed_event(request_command.id, result.finish_reason,
                                       result.usage, buffered_text));
+        } else if (!stream) {
+          emit_text_locked(out, out_mutex, buffered_text);
         }
 
         request->done.store(true);

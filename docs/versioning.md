@@ -40,12 +40,12 @@ The release version identifies the date of the release. It does not, by itself, 
 
 ## Compatibility Versions
 
-`yllama-runner` has one primary compatibility contract: the JSON Lines protocol used between the parent process and the runner.
+`yllama-runner` has one primary compatibility contract: the stdio protocol used between the parent process and the runner.
 
 The runner:
 
 - Reads JSON Lines commands from stdin.
-- Writes JSON Lines events to stdout.
+- Writes JSON Lines events or requested raw generated text to stdout.
 - Writes logs and diagnostics to stderr.
 
 Because the runner does not expose an HTTP API, socket API, persistent database schema, plugin interface, or user-facing daemon configuration, the only compatibility version currently tracked is the runner protocol version.
@@ -63,7 +63,7 @@ The runner exposes the protocol version in its startup `hello` event.
 Example:
 
 ```json
-{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel"]}
+{"type":"hello","protocol_version":1,"runner":"yllama-runner","capabilities":["generate","stream","cancel","output_modes"]}
 ```
 
 Parent processes should read the `hello` event before sending generation commands. They should verify the protocol version and check capabilities instead of assuming behavior from the release date.

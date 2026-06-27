@@ -2,13 +2,13 @@
 
 `yllama-runner` is a small llama.cpp-based local inference runner for developers who want local GGUF inference behind a simple process boundary.
 
-It is not a daemon and does not listen on a socket. It reads JSON Lines from stdin, writes JSON Lines to stdout, and writes logs to stderr.
+It is not a daemon and does not listen on a socket. It reads JSON Lines from stdin, writes JSON protocol events or requested raw generated text to stdout, and writes logs to stderr.
 
 ## Why use it
 
 Many local model integrations start by embedding inference code directly into an application or by standing up an HTTP server. Both approaches add coupling: applications inherit model lifecycle details, and local services introduce ports, routing, authentication, and deployment behavior that may not be needed.
 
-`yllama-runner` keeps that boundary small. A parent process starts the runner, sends JSON Lines commands over stdin, and reads JSON Lines events from stdout. That gives developers a predictable way to load a local model, stream tokens, cancel work, and shut down cleanly without adding a network service.
+`yllama-runner` keeps that boundary small. A parent process starts the runner, sends JSON Lines commands over stdin, and reads JSON events or raw generated text from stdout. That gives developers a predictable way to load a local model, stream tokens, cancel work, and shut down cleanly without adding a network service.
 
 This is useful for:
 
@@ -21,7 +21,7 @@ This is useful for:
 
 - Load one local GGUF model.
 - Accept generation requests over stdio.
-- Stream token deltas as JSON Lines, or return compact single-event text when streaming is disabled.
+- Return generated text as JSON or raw text, either streamed live or delayed until completion.
 - Support cancellation.
 - Exit cleanly when requested.
 - Avoid HTTP, HTTPS, TCP, and public IPC.

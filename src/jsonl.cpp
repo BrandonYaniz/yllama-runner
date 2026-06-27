@@ -411,12 +411,40 @@ ParseResult parse_generate(const JsonValue& root) {
     settings.top_p = number_field(*value, "top_p");
     settings.max_tokens = int_field(*value, "max_tokens");
     settings.stream = bool_field(*value, "stream");
+    if (settings.stream.has_value()) {
+      settings.output_delivery = *settings.stream ? "stream" : "complete";
+    }
 
     if (field(*value, "max_tokens") != nullptr && !settings.max_tokens) {
       return make_error("invalid_command", "max_tokens must be an integer");
     }
-    if (field(*value, "stream") != nullptr && !settings.stream) {
+    if (field(*value, "stream") != nullptr && !settings.stream.has_value()) {
       return make_error("invalid_command", "stream must be a boolean");
+    }
+
+    if (const JsonValue* output = field(*value, "output"); output != nullptr) {
+      if (output->type != JsonValue::Type::Object) {
+        return make_error("invalid_command", "output must be an object");
+      }
+
+      auto format = string_field(*output, "format");
+      auto delivery = string_field(*output, "delivery");
+      if (!format) {
+        return make_error("invalid_command", "output requires string format");
+      }
+      if (!delivery) {
+        return make_error("invalid_command", "output requires string delivery");
+      }
+      if (*format != "json" && *format != "text") {
+        return make_error("invalid_command",
+                          "output format must be json or text");
+      }
+      if (*delivery != "stream" && *delivery != "complete") {
+        return make_error("invalid_command",
+                          "output delivery must be stream or complete");
+      }
+      settings.output_format = *format;
+      settings.output_delivery = *delivery;
     }
 
     if (const JsonValue* stop = field(*value, "stop"); stop != nullptr) {

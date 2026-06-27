@@ -41,6 +41,8 @@ struct GenerateSettings {
   std::optional<double> top_p;
   std::optional<int> max_tokens;
   std::optional<bool> stream;
+  std::string output_format = "json";
+  std::string output_delivery = "stream";
   std::vector<std::string> stop;
 };
 

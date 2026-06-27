@@ -54,7 +54,7 @@ No specific response timeline is guaranteed.
 The runner:
 
 * Reads JSON Lines commands from stdin.
-* Writes JSON Lines events to stdout.
+* Writes JSON Lines events or requested raw generated text to stdout.
 * Writes logs and diagnostics to stderr.
 * Does not expose an HTTP API.
 * Does not listen on TCP, UDP, Unix sockets, or other network interfaces.
@@ -72,9 +72,9 @@ The stdio protocol is the primary boundary between the parent process and `yllam
 Expected boundaries:
 
 * stdin is for machine-readable JSON Lines commands.
-* stdout is for machine-readable JSON Lines events.
+* stdout is for machine-readable JSON Lines events or requested raw generated text.
 * stderr is for human-readable logs and diagnostics.
-* Logs must not be written to stdout because stdout is part of the machine-readable protocol.
+* Logs must not be written to stdout because stdout is part of the parent-facing output channel.
 * Parent processes should validate the runner `hello` event before sending work.
 * Parent processes should verify the reported protocol version and required capabilities.
 

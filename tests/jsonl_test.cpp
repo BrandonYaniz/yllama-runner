@@ -48,6 +48,29 @@ int main() {
     assert(command.settings.max_tokens == 128);
     assert(command.settings.stop.size() == 1);
     assert(command.settings.stop[0] == "</s>");
+    assert(command.settings.output_format == "json");
+    assert(command.settings.output_delivery == "stream");
+  }
+
+  {
+    const auto result = yllama::parse_command_line(
+        "{\"type\":\"generate\",\"id\":\"req-output\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"output\":{\"format\":\"text\","
+        "\"delivery\":\"complete\"}}}");
+    const auto& command = get_command<yllama::GenerateCommand>(result);
+    assert(command.settings.output_format == "text");
+    assert(command.settings.output_delivery == "complete");
+  }
+
+  {
+    const auto result = yllama::parse_command_line(
+        "{\"type\":\"generate\",\"id\":\"req-legacy-stream\","
+        "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+        "\"settings\":{\"stream\":false}}");
+    const auto& command = get_command<yllama::GenerateCommand>(result);
+    assert(command.settings.output_format == "json");
+    assert(command.settings.output_delivery == "complete");
   }
 
   {
@@ -103,6 +126,12 @@ int main() {
                    "{\"type\":\"generate\",\"id\":\"req-003\","
                    "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
                    "\"settings\":{\"max_tokens\":4.5}}"),
+               "invalid_command");
+  expect_error(yllama::parse_command_line(
+                   "{\"type\":\"generate\",\"id\":\"req-004\","
+                   "\"input\":{\"kind\":\"prompt\",\"prompt\":\"Hello\"},"
+                   "\"settings\":{\"output\":{\"format\":\"xml\","
+                   "\"delivery\":\"stream\"}}}"),
                "invalid_command");
 
   return 0;

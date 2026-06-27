@@ -58,7 +58,7 @@ std::string json_escape(std::string_view value) {
 std::string hello_event() {
   return "{\"type\":\"hello\",\"protocol_version\":1,"
          "\"runner\":\"yllama-runner\","
-         "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}";
+         "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}";
 }
 
 std::string ready_event(std::string_view id,

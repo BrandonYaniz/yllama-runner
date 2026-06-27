@@ -84,7 +84,7 @@ Expected stdout events:
 - one or more `delta` events
 - `completed`
 
-stdout must contain only JSON Lines protocol events. llama.cpp diagnostics are suppressed by default; builds configured with `YLLAMA_ENABLE_LLAMA_LOGS=ON` may write llama.cpp diagnostics to stderr.
+For the default JSON output mode, stdout must contain only JSON Lines protocol events. llama.cpp diagnostics are suppressed by default; builds configured with `YLLAMA_ENABLE_LLAMA_LOGS=ON` may write llama.cpp diagnostics to stderr.
 
 For a compact output check, set `"stream":false`:
 
@@ -131,7 +131,7 @@ Include:
 - GGUF model name and quantization.
 - Full CMake configure command.
 - Failing command.
-- stdout JSONL output.
+- stdout output.
 - stderr diagnostics, if the build has llama.cpp logs enabled.
 
 Do not include private prompts, private model paths, or local secrets in reports.

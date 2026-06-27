@@ -8,7 +8,7 @@ int main() {
   assert(yllama::hello_event() ==
          "{\"type\":\"hello\",\"protocol_version\":1,"
          "\"runner\":\"yllama-runner\","
-         "\"capabilities\":[\"generate\",\"stream\",\"cancel\"]}");
+         "\"capabilities\":[\"generate\",\"stream\",\"cancel\",\"output_modes\"]}");
 
   assert(yllama::ready_event("cfg-001", "/models/fast/model.gguf", 8192) ==
          "{\"type\":\"ready\",\"id\":\"cfg-001\","
