@@ -10,7 +10,7 @@ int main() {
 
   {
     const auto result = backend->generate(
-        "Hello", options, [](std::string_view) {}, []() { return false; });
+        "Hello", options, [](std::string_view) { return true; }, []() { return false; });
     assert(result.error.has_value());
     assert(result.error->code == "not_configured");
   }
@@ -26,7 +26,7 @@ int main() {
   {
     std::string delta;
     const auto result = backend->generate(
-        "Hello", options, [&](std::string_view text) { delta.append(text); },
+        "Hello", options, [&](std::string_view text) { delta.append(text); return true; },
         []() { return false; });
     assert(!result.error.has_value());
     assert(delta == "fake response");
@@ -35,7 +35,7 @@ int main() {
   {
     std::string delta;
     const auto result = backend->generate(
-        "Hello", options, [&](std::string_view text) { delta.append(text); },
+        "Hello", options, [&](std::string_view text) { delta.append(text); return true; },
         []() { return true; });
     assert(!result.error.has_value());
     assert(delta.empty());

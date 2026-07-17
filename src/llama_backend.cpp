@@ -1,6 +1,7 @@
 #include "llama_backend.hpp"
 
 #include <cstdint>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include <llama.h>
+#include <ggml-backend.h>
 
 namespace yllama {
 namespace {
@@ -79,16 +81,20 @@ GenerateResult generate_error(std::string code, std::string message) {
 
 std::optional<std::vector<llama_token>> tokenize_prompt(
     const llama_vocab* vocab,
-    std::string_view prompt) {
+    std::string_view prompt,
+    TokenizationMode mode) {
+  const bool add_special = mode == TokenizationMode::Raw;
+  const bool parse_special = mode == TokenizationMode::Preformatted;
   const int count = -llama_tokenize(vocab, prompt.data(), prompt.size(), nullptr,
-                                    0, true, true);
+                                    0, add_special, parse_special);
   if (count <= 0) {
     return std::nullopt;
   }
 
   std::vector<llama_token> tokens(static_cast<std::size_t>(count));
   const int written = llama_tokenize(vocab, prompt.data(), prompt.size(),
-                                     tokens.data(), tokens.size(), true, true);
+                                     tokens.data(), tokens.size(), add_special,
+                                     parse_special);
   if (written < 0) {
     return std::nullopt;
   }
@@ -119,16 +125,29 @@ SamplerPtr make_sampler(const GenerateOptions& options) {
     return nullptr;
   }
 
+  if (options.repeat_penalty != 1.0 || options.presence_penalty != 0.0) {
+    llama_sampler_chain_add(sampler.get(), llama_sampler_init_penalties(
+        -1, static_cast<float>(options.repeat_penalty), 0.0f,
+        static_cast<float>(options.presence_penalty)));
+  }
   if (options.temperature <= 0.0) {
     llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
     return sampler;
   }
-
+  if (options.top_k > 0) {
+    llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_k(options.top_k));
+  }
   llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_p(
                                              static_cast<float>(options.top_p), 1));
+  if (options.min_p > 0.0) {
+    llama_sampler_chain_add(sampler.get(), llama_sampler_init_min_p(
+                                               static_cast<float>(options.min_p), 1));
+  }
   llama_sampler_chain_add(sampler.get(), llama_sampler_init_temp(
                                              static_cast<float>(options.temperature)));
-  llama_sampler_chain_add(sampler.get(), llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+  const std::uint32_t seed = options.seed == UINT64_MAX
+      ? LLAMA_DEFAULT_SEED : static_cast<std::uint32_t>(options.seed);
+  llama_sampler_chain_add(sampler.get(), llama_sampler_init_dist(seed));
   return sampler;
 }
 
@@ -154,6 +173,12 @@ class LlamaBackend final : public Backend {
     ModelPtr next_model;
 
     llama_model_params model_params = llama_model_default_params();
+    model_params.n_gpu_layers = config.gpu_layers;
+    ggml_backend_dev_t cpu_devices[] = {
+        ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr};
+    if (config.gpu_layers == 0) {
+      model_params.devices = cpu_devices;
+    }
     next_model.reset(
         llama_model_load_from_file(config.model_path.c_str(), model_params));
     if (!next_model) {
@@ -187,24 +212,12 @@ class LlamaBackend final : public Backend {
                             "Backend must be configured before generation.");
     }
 
-    if (options.max_tokens <= 0) {
-      return generate_error("invalid_settings",
-                            "max_tokens must be greater than zero.");
-    }
-    if (options.temperature < 0.0) {
-      return generate_error("invalid_settings",
-                            "temperature must be greater than or equal to zero.");
-    }
-    if (options.top_p <= 0.0 || options.top_p > 1.0) {
-      return generate_error("invalid_settings", "top_p must be in the range (0, 1].");
-    }
-
     const llama_vocab* vocab = llama_model_get_vocab(model_.get());
     if (is_cancelled()) {
       return GenerateResult{std::nullopt};
     }
 
-    auto prompt_tokens = tokenize_prompt(vocab, prompt);
+    auto prompt_tokens = tokenize_prompt(vocab, prompt, options.tokenization_mode);
     if (!prompt_tokens) {
       return generate_error("tokenize_failed", "Unable to tokenize prompt.");
     }
@@ -219,17 +232,25 @@ class LlamaBackend final : public Backend {
       return generate_error("sampler_init_failed",
                             "Unable to initialize sampler.");
     }
+    for (llama_token token : *prompt_tokens) {
+      llama_sampler_accept(sampler.get(), token);
+    }
 
     llama_memory_clear(llama_get_memory(context_.get()), true);
 
     llama_batch batch =
         llama_batch_get_one(prompt_tokens->data(), prompt_tokens->size());
+    GenerateResult result;
+    result.input_tokens = static_cast<std::uint32_t>(prompt_tokens->size());
+    const auto prompt_started = std::chrono::steady_clock::now();
+    auto generation_started = prompt_started;
     int n_pos = 0;
     int output_tokens = 0;
 
     while (n_pos + batch.n_tokens < context_tokens_ &&
-           output_tokens < options.max_tokens) {
+           static_cast<std::uint32_t>(output_tokens) < options.max_tokens) {
       if (is_cancelled()) {
+        result.finish_reason = FinishReason::Cancelled;
         break;
       }
 
@@ -237,13 +258,21 @@ class LlamaBackend final : public Backend {
         return generate_error("decode_failed", "llama.cpp failed to decode tokens.");
       }
       n_pos += batch.n_tokens;
+      if (output_tokens == 0) {
+        generation_started = std::chrono::steady_clock::now();
+        result.prompt_microseconds = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                generation_started - prompt_started).count());
+      }
 
       if (is_cancelled()) {
+        result.finish_reason = FinishReason::Cancelled;
         break;
       }
 
       llama_token next_token = llama_sampler_sample(sampler.get(), context_.get(), -1);
       if (llama_vocab_is_eog(vocab, next_token)) {
+        result.finish_reason = FinishReason::Eos;
         break;
       }
 
@@ -254,11 +283,24 @@ class LlamaBackend final : public Backend {
       }
 
       ++output_tokens;
-      on_delta(*piece);
+      result.output_tokens = static_cast<std::uint32_t>(output_tokens);
+      if (!on_delta(*piece)) {
+        result.finish_reason = is_cancelled() ? FinishReason::Cancelled
+                                              : FinishReason::Stop;
+        break;
+      }
       batch = llama_batch_get_one(&next_token, 1);
     }
-
-    return GenerateResult{std::nullopt};
+    if (result.finish_reason == FinishReason::Eos &&
+        (static_cast<std::uint32_t>(output_tokens) >= options.max_tokens ||
+         n_pos + batch.n_tokens >= context_tokens_)) {
+      result.finish_reason = FinishReason::Length;
+    }
+    const auto ended = std::chrono::steady_clock::now();
+    result.generation_microseconds = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            ended - generation_started).count());
+    return result;
   }
 
  private:

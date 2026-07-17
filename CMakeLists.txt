@@ -14,7 +14,7 @@ option(YLLAMA_BUILD_TESTS "Build yllama-runner tests" ON)
 option(YLLAMA_ENABLE_LLAMA_SMOKE_TEST "Enable opt-in llama.cpp backend smoke test" OFF)
 option(YLLAMA_ENABLE_LLAMA_LOGS "Keep llama.cpp diagnostics on stderr" OFF)
 set(YLLAMA_RELEASE_VERSION
-    "2026.05.31-beta.1"
+    "26.07.16.01-Release"
     CACHE STRING "Public yllama-runner release version")
 set(YLLAMA_LLAMA_CPP_INCLUDE_DIR
     ""
@@ -32,35 +32,33 @@ set(YLLAMA_LLAMA_SMOKE_LIBRARY_PATH
     ""
     CACHE PATH "Runtime library path for the opt-in llama.cpp smoke test")
 
-if(NOT YLLAMA_LLAMA_CPP_INCLUDE_DIR)
-  message(FATAL_ERROR
-    "YLLAMA_LLAMA_CPP_INCLUDE_DIR is required")
+set(YLLAMA_LLAMA_CPP_REVISION "0821c5fcfd729af70037bc1e9e60769d42c081ba" CACHE STRING "Pinned llama.cpp commit")
+if(YLLAMA_LLAMA_CPP_INCLUDE_DIR)
+  if(NOT EXISTS "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}/llama.h" OR NOT YLLAMA_LLAMA_CPP_LIBRARIES)
+    message(FATAL_ERROR "External llama.cpp requires valid include dir and libraries")
+  endif()
+  add_library(llama_cpp_external INTERFACE)
+  target_include_directories(llama_cpp_external INTERFACE "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}" ${YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS})
+  target_link_libraries(llama_cpp_external INTERFACE ${YLLAMA_LLAMA_CPP_LIBRARIES})
+else()
+  include(FetchContent)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static release dependencies" FORCE)
+  set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+  set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(llama_cpp GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git GIT_TAG ${YLLAMA_LLAMA_CPP_REVISION} GIT_SHALLOW FALSE)
+  FetchContent_MakeAvailable(llama_cpp)
+  add_library(llama_cpp_external ALIAS llama)
 endif()
-
-if(NOT EXISTS "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}/llama.h")
-  message(FATAL_ERROR
-    "YLLAMA_LLAMA_CPP_INCLUDE_DIR must contain llama.h")
-endif()
-
-if(NOT YLLAMA_LLAMA_CPP_LIBRARIES)
-  message(FATAL_ERROR
-    "YLLAMA_LLAMA_CPP_LIBRARIES is required")
-endif()
-
-add_library(llama_cpp_external INTERFACE)
-target_include_directories(llama_cpp_external INTERFACE
-  "${YLLAMA_LLAMA_CPP_INCLUDE_DIR}"
-  ${YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS}
-)
-target_link_libraries(llama_cpp_external INTERFACE
-  ${YLLAMA_LLAMA_CPP_LIBRARIES}
-)
 
 add_library(yllama_core
   src/backend.cpp
   src/frame.cpp
   src/llama_backend.cpp
   src/runner.cpp
+  src/stream_filter.cpp
 )
 
 target_include_directories(yllama_core PUBLIC
@@ -81,6 +79,10 @@ add_executable(yllama-runner
 target_link_libraries(yllama-runner PRIVATE yllama_core)
 target_compile_definitions(yllama-runner PRIVATE
   YLLAMA_RELEASE_VERSION="${YLLAMA_RELEASE_VERSION}"
+  YLLAMA_LLAMA_CPP_REVISION="${YLLAMA_LLAMA_CPP_REVISION}"
+  YLLAMA_COMPUTE_BACKENDS="CPU$<$<BOOL:${GGML_METAL}>:,Metal>$<$<BOOL:${GGML_ACCELERATE}>:,Accelerate>"
+  YLLAMA_TARGET_OS="${CMAKE_SYSTEM_NAME}"
+  YLLAMA_TARGET_ARCH="${CMAKE_SYSTEM_PROCESSOR}"
 )
 
 if(MSVC)
@@ -95,6 +97,12 @@ install(TARGETS yllama-runner
   RUNTIME DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}"
 )
 
+if(APPLE)
+  set_target_properties(yllama-runner PROPERTIES INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif(UNIX)
+  set_target_properties(yllama-runner PROPERTIES INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
+
 if(YLLAMA_BUILD_TESTS)
   enable_testing()
 
@@ -102,6 +110,14 @@ if(YLLAMA_BUILD_TESTS)
     NAME yllama-runner-version
     COMMAND yllama-runner --version
   )
+
+  add_test(NAME yllama-runner-build-info COMMAND yllama-runner --build-info)
+  set_tests_properties(yllama-runner-build-info PROPERTIES
+    PASS_REGULAR_EXPRESSION "llama.cpp-revision: ${YLLAMA_LLAMA_CPP_REVISION}")
+
+  add_test(NAME unsupported-protocol COMMAND yllama-runner --protocol 99
+    --model /must/not/be/loaded.gguf --ctx 32 --threads 1)
+  set_tests_properties(unsupported-protocol PROPERTIES WILL_FAIL TRUE)
 
   set_tests_properties(yllama-runner-version PROPERTIES
     PASS_REGULAR_EXPRESSION "yllama-runner ${YLLAMA_RELEASE_VERSION}"
@@ -158,6 +174,16 @@ if(YLLAMA_BUILD_TESTS)
     COMMAND runner_test
   )
 
+  add_executable(stream_filter_test tests/stream_filter_test.cpp)
+  target_link_libraries(stream_filter_test PRIVATE yllama_core)
+  add_test(NAME utf8-stop-filter COMMAND stream_filter_test)
+
+  configure_file(tests/install_relocation_test.sh.in
+    "${CMAKE_CURRENT_BINARY_DIR}/install_relocation_test.sh" @ONLY)
+  add_test(NAME install-relocation
+    COMMAND sh "${CMAKE_CURRENT_BINARY_DIR}/install_relocation_test.sh"
+            "$<TARGET_FILE:yllama-runner>")
+
   if(YLLAMA_ENABLE_LLAMA_SMOKE_TEST)
     if(NOT YLLAMA_LLAMA_SMOKE_MODEL_PATH)
       message(FATAL_ERROR
@@ -192,6 +218,11 @@ if(YLLAMA_BUILD_TESTS)
               "$<TARGET_FILE:yllama-runner>"
               "${YLLAMA_LLAMA_SMOKE_MODEL_PATH}"
     )
+    add_test(NAME install-relocation-smoke
+      COMMAND "${SH_EXECUTABLE}"
+              "${CMAKE_CURRENT_BINARY_DIR}/install_relocation_test.sh"
+              "$<TARGET_FILE:yllama-runner>"
+              "${YLLAMA_LLAMA_SMOKE_MODEL_PATH}")
 
     if(YLLAMA_LLAMA_SMOKE_LIBRARY_PATH)
       set_tests_properties(llama-backend-smoke PROPERTIES

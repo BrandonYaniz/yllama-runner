@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+runner="$1"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cp "$runner" "$tmp/yllama-runner"
+"$tmp/yllama-runner" --version
+"$tmp/yllama-runner" --build-info
+if command -v otool >/dev/null 2>&1; then
+  ! otool -l "$tmp/yllama-runner" | grep -F "@CMAKE_BINARY_DIR@"
+elif command -v readelf >/dev/null 2>&1; then
+  ! readelf -d "$tmp/yllama-runner" | grep -F "@CMAKE_BINARY_DIR@"
+fi
+if [ "$#" -ge 2 ]; then
+  sh "@CMAKE_CURRENT_BINARY_DIR@/llama_smoke_test.sh" "$tmp/yllama-runner" "$2"
+fi
