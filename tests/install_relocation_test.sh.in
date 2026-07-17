@@ -18,6 +18,9 @@ if [ "@YLLAMA_RELEASE_ARTIFACT@" = "ON" ]; then
     ! otool -l "$tmp/yllama-runner" | tail -n +2 | grep -E '/Users/|/home/|/private/tmp/|/deps/|@CMAKE_BINARY_DIR@'
   elif command -v ldd >/dev/null 2>&1; then
     ldd "$tmp/yllama-runner" | while IFS= read -r line; do
+      case "$line" in
+        *:) continue ;;
+      esac
       library=$(printf '%s\n' "$line" | sed -n 's/.*=> \([^ ]*\).*/\1/p')
       [ -z "$library" ] && library=$(printf '%s\n' "$line" | awk '/^[[:space:]]*\// {print $1}')
       [ -z "$library" ] && continue

@@ -25,12 +25,12 @@ failures = [name for name, passed in checks.items() if not passed]
 if failures:
     raise SystemExit("release version mismatch: " + ", ".join(failures))
 
-base = [runner, "--protocol", "2", "--model", "/must/not/exist.gguf",
-        "--ctx", "32", "--threads", "1", "--gpu-layers"]
+base = [runner, "--gpu-layers"]
 for value in ("-1", "0", "3"):
     result = subprocess.run(base + [value], capture_output=True, text=True,
                             timeout=5)
-    if result.returncode == 2 or "--gpu-layers must" in result.stderr:
+    if (result.returncode != 2 or "usage:" not in result.stderr or
+            "--gpu-layers must" in result.stderr):
         raise SystemExit("valid --gpu-layers value rejected: " + value)
 invalid = subprocess.run(base + ["-2"], capture_output=True, text=True,
                          timeout=5)
