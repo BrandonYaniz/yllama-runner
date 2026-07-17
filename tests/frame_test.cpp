@@ -35,7 +35,7 @@ int main() {
     payload+=f64_le(0.25)+f64_le(0.9)+u32_le(20)+f64_le(0.05)+f64_le(0.0)+f64_le(1.1)+u64_le(42);
     payload+=u32_le(3)+"END"+u32_le(2)+"hi";
     std::istringstream in(envelope(yllama::kMessageGenerate,payload));
-    auto message=yllama::read_v2_message(in); assert(message.status==yllama::ReadFrameStatus::Ok);
+    auto message=yllama::read_v2_message(in); assert(message.status==yllama::InputStatus::Ok);
     assert(message.generate.prompt=="hi"); assert(message.generate.options.tokenization_mode==yllama::TokenizationMode::Preformatted);
     assert(message.generate.options.max_tokens==7); assert(message.generate.options.seed==42); assert(message.generate.options.stop_sequences[0]=="END");
   }
@@ -49,7 +49,66 @@ int main() {
 
   {
     std::istringstream in(std::string("\x01\x01\x00",3)); auto m=yllama::read_v2_message(in);
-    assert(m.status==yllama::ReadFrameStatus::Invalid);assert(m.error.code=="malformed_frame");
+    assert(m.status==yllama::InputStatus::FatalFramingError);assert(m.error.code=="malformed_frame");
+  }
+
+  {
+    std::ostringstream out;
+    assert(yllama::write_v2_ready(out, 2, "x", 4096, 0x7f));
+    const std::string payload = u16_le(2) + u16_le(1) + "x" +
+                                u32_le(4096) + u64_le(0x7f);
+    assert(out.str() == envelope(yllama::kFrameReady, payload));
+  }
+
+  {
+    std::ostringstream out;
+    assert(yllama::write_v2_error(out, "bad", "oops"));
+    const std::string payload = u16_le(3) + "bad" + u16_le(4) + "oops";
+    assert(out.str() == envelope(yllama::kFrameError, payload));
+  }
+
+  {
+    std::istringstream in(std::string("\x01", 1) +
+                          u32_le(yllama::kMaxFrameBytes + 1) + "arbitrary");
+    auto message = yllama::read_v2_message(in);
+    assert(message.status == yllama::InputStatus::FatalFramingError);
+    assert(message.error.code == "frame_too_large");
+  }
+
+  {
+    std::istringstream in(std::string("\x01\x02\x00", 3));
+    assert(yllama::read_v2_message(in).status ==
+           yllama::InputStatus::FatalFramingError);
+  }
+
+  {
+    std::istringstream in(std::string("\x01", 1) + u32_le(4) + "xx");
+    assert(yllama::read_v2_message(in).status ==
+           yllama::InputStatus::FatalFramingError);
+  }
+
+  {
+    std::string valid("\x00\x00", 2);
+    valid += u16_le(0) + u32_le(1) + f64_le(0) + f64_le(1) + u32_le(0) +
+             f64_le(0) + f64_le(0) + f64_le(1) + u64_le(1) + u32_le(2) + "ok";
+    std::istringstream in(envelope(0x7f, "unknown") +
+                          envelope(yllama::kMessageGenerate, valid));
+    assert(yllama::read_v2_message(in).status ==
+           yllama::InputStatus::RecoverableError);
+    auto next = yllama::read_v2_message(in);
+    assert(next.status == yllama::InputStatus::Ok && next.generate.prompt == "ok");
+  }
+
+  {
+    std::string malformed("\x00\x01", 2);
+    std::string valid("\x00\x00", 2);
+    valid += u16_le(0) + u32_le(1) + f64_le(0) + f64_le(1) + u32_le(0) +
+             f64_le(0) + f64_le(0) + f64_le(1) + u64_le(1) + u32_le(2) + "ok";
+    std::istringstream in(envelope(yllama::kMessageGenerate, malformed) +
+                          envelope(yllama::kMessageGenerate, valid));
+    assert(yllama::read_v2_message(in).status ==
+           yllama::InputStatus::RecoverableError);
+    assert(yllama::read_v2_message(in).status == yllama::InputStatus::Ok);
   }
 
   {

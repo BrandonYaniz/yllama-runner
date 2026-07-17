@@ -1,5 +1,7 @@
 name: CI
 on: [push, pull_request]
+env:
+  YLLAMA_EXPECTED_RELEASE_VERSION: 26.07.16.01-Release
 jobs:
   build:
     strategy:
@@ -18,8 +20,8 @@ jobs:
       - run: cmake --build build --parallel
       - run: ctest --test-dir build --output-on-failure
       - run: cmake --install build --prefix "$RUNNER_TEMP/install"
-      - run: build/yllama-runner --build-info | grep -F '26.07.16.01-Release'
-      - run: grep -F '26.07.16.01-Release' docs/versioning.md
+      - run: build/yllama-runner --build-info | grep -F "$YLLAMA_EXPECTED_RELEASE_VERSION"
+      - run: grep -F "$YLLAMA_EXPECTED_RELEASE_VERSION" docs/versioning.md
   freebsd:
     runs-on: ubuntu-latest
     steps:

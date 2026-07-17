@@ -6,10 +6,31 @@ trap 'rm -rf "$tmp"' EXIT
 cp "$runner" "$tmp/yllama-runner"
 "$tmp/yllama-runner" --version
 "$tmp/yllama-runner" --build-info
-if command -v otool >/dev/null 2>&1; then
-  ! otool -l "$tmp/yllama-runner" | grep -F "@CMAKE_BINARY_DIR@"
-elif command -v readelf >/dev/null 2>&1; then
-  ! readelf -d "$tmp/yllama-runner" | grep -F "@CMAKE_BINARY_DIR@"
+if [ "@YLLAMA_RELEASE_ARTIFACT@" = "ON" ]; then
+  if command -v otool >/dev/null 2>&1; then
+    otool -L "$tmp/yllama-runner" | tail -n +2 | while IFS= read -r line; do
+      library=$(printf '%s\n' "$line" | awk '{print $1}')
+      case "$library" in
+        /System/Library/*|/usr/lib/*|@rpath/*|@loader_path/*) ;;
+        *) echo "unapproved macOS dependency: $library" >&2; exit 1 ;;
+      esac
+    done
+    ! otool -l "$tmp/yllama-runner" | tail -n +2 | grep -E '/Users/|/home/|/private/tmp/|/deps/|@CMAKE_BINARY_DIR@'
+  elif command -v ldd >/dev/null 2>&1; then
+    ldd "$tmp/yllama-runner" | while IFS= read -r line; do
+      library=$(printf '%s\n' "$line" | sed -n 's/.*=> \([^ ]*\).*/\1/p')
+      [ -z "$library" ] && library=$(printf '%s\n' "$line" | awk '/^[[:space:]]*\// {print $1}')
+      [ -z "$library" ] && continue
+      case "$library" in
+        /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*) ;;
+        *) echo "unapproved ELF dependency: $library" >&2; exit 1 ;;
+      esac
+    done
+    ! readelf -d "$tmp/yllama-runner" | grep -E '/Users/|/home/|/private/tmp/|/deps/|@CMAKE_BINARY_DIR@'
+  fi
+  ! strings "$tmp/yllama-runner" | grep -E '/Users/[^/]+/|/home/[^/]+/|/private/tmp/[^ ]*build|/deps/llama.cpp'
+else
+  echo "external shared-library development build: release dependency policy skipped"
 fi
 if [ "$#" -ge 2 ]; then
   sh "@CMAKE_CURRENT_BINARY_DIR@/llama_smoke_test.sh" "$tmp/yllama-runner" "$2"

@@ -11,6 +11,9 @@ ctest --test-dir build-release --output-on-failure
 cmake --install build-release --prefix staging
 ```
 
+Release jobs always use a completely clean build directory. `VERSION` is the
+single release-version source; it is not a reusable CMake cache setting.
+
 On macOS arm64 llama.cpp enables Metal and Accelerate when available. Linux
 amd64/arm64 and FreeBSD amd64 use CPU backends. Release builds are static by
 default. When shared libraries are explicitly enabled, installed lookup is
@@ -34,6 +37,8 @@ development override variables `YLLAMA_LLAMA_CPP_INCLUDE_DIR`,
 `YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS`, and `YLLAMA_LLAMA_CPP_LIBRARIES` remain
 available, but external shared-library builds are not release artifacts.
 
-The default `--gpu-layers` is 0. `--build-info` identifies compiled backends and
+The default `--gpu-layers` is 0, meaning CPU-only. `-1` requests llama.cpp's
+maximum/automatic offload, and a positive value requests that many layers.
+Values below `-1` are rejected. `--build-info` identifies compiled backends and
 the pinned dependency. llama.cpp logs are suppressed unless configured with
 `-DYLLAMA_ENABLE_LLAMA_LOGS=ON`.

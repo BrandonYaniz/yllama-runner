@@ -73,9 +73,11 @@ ConfigureResult configure_error(std::string code, std::string message) {
   return result;
 }
 
-GenerateResult generate_error(std::string code, std::string message) {
+GenerateResult generate_error(std::string code, std::string message,
+                              ErrorDisposition disposition =
+                                  ErrorDisposition::Recoverable) {
   GenerateResult result;
-  result.error = BackendError{std::move(code), std::move(message)};
+  result.error = BackendError{std::move(code), std::move(message), disposition};
   return result;
 }
 
@@ -210,7 +212,8 @@ class LlamaBackend final : public Backend {
                           const CancellationCallback& is_cancelled) override {
     if (!context_) {
       return generate_error("not_configured",
-                            "Backend must be configured before generation.");
+                            "Backend must be configured before generation.",
+                            ErrorDisposition::Fatal);
     }
 
     const llama_vocab* vocab = llama_model_get_vocab(model_.get());
@@ -256,7 +259,8 @@ class LlamaBackend final : public Backend {
       }
 
       if (llama_decode(context_.get(), batch) != 0) {
-        return generate_error("decode_failed", "llama.cpp failed to decode tokens.");
+        return generate_error("decode_failed", "llama.cpp failed to decode tokens.",
+                              ErrorDisposition::Fatal);
       }
       n_pos += batch.n_tokens;
       if (output_tokens == 0) {
@@ -280,7 +284,8 @@ class LlamaBackend final : public Backend {
       auto piece = token_to_text(vocab, next_token);
       if (!piece) {
         return generate_error("detokenize_failed",
-                              "Unable to convert token to text.");
+                              "Unable to convert token to text.",
+                              ErrorDisposition::Fatal);
       }
 
       ++output_tokens;

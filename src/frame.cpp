@@ -36,7 +36,8 @@ struct Cursor { const std::string& s; std::size_t p=0;
   bool real(double& v){const char*q;if(!take(8,q))return false;v=f64(q);return true;}
   bool str(std::uint32_t n,std::string& v){const char*q;if(!take(n,q))return false;v.assign(q,n);return true;}
 };
-InputMessage bad(std::string code,std::string msg){InputMessage m;m.error={std::move(code),std::move(msg)};return m;}
+InputMessage recoverable(std::string code,std::string msg){InputMessage m;m.status=InputStatus::RecoverableError;m.error={std::move(code),std::move(msg)};return m;}
+InputMessage fatal(std::string code,std::string msg){InputMessage m;m.status=InputStatus::FatalFramingError;m.error={std::move(code),std::move(msg),ErrorDisposition::Fatal};return m;}
 bool valid_utf8(std::string_view s){std::size_t i=0;while(i<s.size()){unsigned char c=s[i];std::size_t n;if(c<0x80)n=1;else if(c>=0xC2&&c<=0xDF)n=2;else if(c>=0xE0&&c<=0xEF)n=3;else if(c>=0xF0&&c<=0xF4)n=4;else return false;if(i+n>s.size())return false;for(std::size_t j=1;j<n;++j)if((static_cast<unsigned char>(s[i+j])&0xC0)!=0x80)return false;if(n==3&&((c==0xE0&&static_cast<unsigned char>(s[i+1])<0xA0)||(c==0xED&&static_cast<unsigned char>(s[i+1])>=0xA0)))return false;if(n==4&&((c==0xF0&&static_cast<unsigned char>(s[i+1])<0x90)||(c==0xF4&&static_cast<unsigned char>(s[i+1])>=0x90)))return false;i+=n;}return true;}
 }  // namespace
 
@@ -48,18 +49,18 @@ PromptFrame read_prompt_frame(std::istream& in) {
 }
 
 InputMessage read_v2_message(std::istream& in) {
-  std::array<char,5>h{}; in.read(h.data(),5); if(in.gcount()==0&&in.eof()){InputMessage m;m.status=ReadFrameStatus::Eof;return m;}
-  if(in.gcount()!=5)return bad("malformed_frame","truncated message envelope"); const std::uint8_t type=static_cast<unsigned char>(h[0]); const auto n=u32(h.data()+1);
-  if(n>kMaxFrameBytes)return bad("frame_too_large","payload exceeds 32 MiB limit"); std::string p(n,'\0');
-  if(n&&!read_exact(in,p.data(),n))return bad("malformed_frame","truncated message payload"); InputMessage m;m.type=type;
-  if(type==kMessageCancel||type==kMessageShutdown){if(n)return bad("malformed_message","Cancel and Shutdown payloads must be empty");m.status=ReadFrameStatus::Ok;return m;}
-  if(type!=kMessageGenerate)return bad("unknown_message_type","unknown input message type"); Cursor c{p};std::uint8_t mode,flags;std::uint16_t stops;std::uint32_t max;
-  if(!c.byte(mode)||!c.byte(flags)||!c.word(stops)||!c.dword(max))return bad("malformed_generate","truncated Generate settings");
-  if(flags!=0)return bad("invalid_reserved","Generate reserved flags must be zero"); if(mode>1)return bad("invalid_tokenization_mode","tokenization_mode must be 0 or 1"); if(stops>kMaxStopCount)return bad("too_many_stops","stop_count exceeds 64");
+  std::array<char,5>h{}; in.read(h.data(),5); if(in.gcount()==0&&in.eof()){InputMessage m;m.status=InputStatus::Eof;return m;}
+  if(in.gcount()!=5)return fatal("malformed_frame","truncated message envelope"); const std::uint8_t type=static_cast<unsigned char>(h[0]); const auto n=u32(h.data()+1);
+  if(n>kMaxFrameBytes)return fatal("frame_too_large","payload exceeds 32 MiB limit"); std::string p(n,'\0');
+  if(n&&!read_exact(in,p.data(),n))return fatal("malformed_frame","truncated message payload"); InputMessage m;m.type=type;
+  if(type==kMessageCancel||type==kMessageShutdown){if(n)return recoverable("malformed_message","Cancel and Shutdown payloads must be empty");m.status=InputStatus::Ok;return m;}
+  if(type!=kMessageGenerate)return recoverable("unknown_message_type","unknown input message type"); Cursor c{p};std::uint8_t mode,flags;std::uint16_t stops;std::uint32_t max;
+  if(!c.byte(mode)||!c.byte(flags)||!c.word(stops)||!c.dword(max))return recoverable("malformed_generate","truncated Generate settings");
+  if(flags!=0)return recoverable("invalid_reserved","Generate reserved flags must be zero"); if(mode>1)return recoverable("invalid_tokenization_mode","tokenization_mode must be 0 or 1"); if(stops>kMaxStopCount)return recoverable("too_many_stops","stop_count exceeds 64");
   auto&o=m.generate.options;o.tokenization_mode=static_cast<TokenizationMode>(mode);o.max_tokens=max;std::uint32_t topk;
-  if(!c.real(o.temperature)||!c.real(o.top_p)||!c.dword(topk)||!c.real(o.min_p)||!c.real(o.presence_penalty)||!c.real(o.repeat_penalty)||!c.qword(o.seed))return bad("malformed_generate","truncated Generate sampling settings");o.top_k=static_cast<std::int32_t>(topk);
-  std::size_t total_stop=0;for(std::uint16_t i=0;i<stops;++i){std::uint32_t len;if(!c.dword(len)||len>kMaxStopBytes||total_stop+len>kMaxStopBytes)return bad("invalid_stop_sequence","stop strings exceed 64 KiB aggregate limit");std::string s;if(!c.str(len,s)||s.empty()||!valid_utf8(s))return bad("invalid_stop_sequence","stop strings must be nonempty valid UTF-8");total_stop+=len;o.stop_sequences.push_back(std::move(s));}
-  std::uint32_t plen;if(!c.dword(plen)||plen>kMaxPromptBytes||!c.str(plen,m.generate.prompt)||c.p!=p.size())return bad("malformed_generate","invalid prompt length or trailing bytes");if(!valid_utf8(m.generate.prompt))return bad("invalid_prompt_utf8","prompt must be valid UTF-8");m.status=ReadFrameStatus::Ok;return m;
+  if(!c.real(o.temperature)||!c.real(o.top_p)||!c.dword(topk)||!c.real(o.min_p)||!c.real(o.presence_penalty)||!c.real(o.repeat_penalty)||!c.qword(o.seed))return recoverable("malformed_generate","truncated Generate sampling settings");o.top_k=static_cast<std::int32_t>(topk);
+  std::size_t total_stop=0;for(std::uint16_t i=0;i<stops;++i){std::uint32_t len;if(!c.dword(len)||len>kMaxStopBytes||total_stop+len>kMaxStopBytes)return recoverable("invalid_stop_sequence","stop strings exceed 64 KiB aggregate limit");std::string s;if(!c.str(len,s)||s.empty()||!valid_utf8(s))return recoverable("invalid_stop_sequence","stop strings must be nonempty valid UTF-8");total_stop+=len;o.stop_sequences.push_back(std::move(s));}
+  std::uint32_t plen;if(!c.dword(plen)||plen>kMaxPromptBytes||!c.str(plen,m.generate.prompt)||c.p!=p.size())return recoverable("malformed_generate","invalid prompt length or trailing bytes");if(!valid_utf8(m.generate.prompt))return recoverable("invalid_prompt_utf8","prompt must be valid UTF-8");m.status=InputStatus::Ok;return m;
 }
 
 bool write_chunk_frame(std::ostream& out,std::string_view t){if(t.size()>kMaxFrameBytes)return false;char tag=kFrameChunk;std::string n;put32(n,static_cast<std::uint32_t>(t.size()));return write_exact(out,&tag,1)&&write_exact(out,n.data(),4)&&write_exact(out,t.data(),t.size());}

@@ -29,6 +29,12 @@ class EchoBackend final : public yllama::Backend {
       return yllama::GenerateResult{
           yllama::BackendError{"invalid_prompt", "prompt rejected"}};
     }
+    if (prompt == "fatal") {
+      yllama::GenerateResult result;
+      result.error = yllama::BackendError{"fatal_backend", "fatal backend error",
+                                          yllama::ErrorDisposition::Fatal};
+      return result;
+    }
     if (!on_delta("echo:") || !on_delta(prompt)) {
       yllama::GenerateResult cancelled;
       cancelled.finish_reason = yllama::FinishReason::Cancelled;
@@ -101,6 +107,28 @@ int main() {
     assert(out.str() == chunk_frame("echo:") + chunk_frame("one") +
                             done_frame() + chunk_frame("echo:") +
                             chunk_frame("two") + done_frame());
+  }
+
+  {
+    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
+    std::istringstream in(v2_generate("fail")+v2_generate("after"));std::ostringstream out,err;
+    assert(yllama::run_stdio(in,out,err,v2,options,backend)==0);
+    assert(backend.generate_count==2);
+  }
+
+  {
+    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
+    std::istringstream in(v2_generate("fatal")+v2_generate("after"));std::ostringstream out,err;
+    assert(yllama::run_stdio(in,out,err,v2,options,backend)==1);
+    assert(backend.generate_count==1);
+  }
+
+  {
+    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
+    std::string oversized("\x01",1);oversized+=u32_le(yllama::kMaxFrameBytes+1);oversized+=v2_generate("after");
+    std::istringstream in(oversized);std::ostringstream out,err;
+    assert(yllama::run_stdio(in,out,err,v2,options,backend)==1);
+    assert(backend.generate_count==0);
   }
 
   {

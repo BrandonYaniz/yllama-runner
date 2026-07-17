@@ -39,6 +39,7 @@ constexpr std::uint64_t kCapabilityTimingMetadata = 1ULL << 6;
 constexpr std::uint64_t kCapabilitiesV2 = (1ULL << 7) - 1;
 
 enum class ReadFrameStatus { Ok, Eof, Invalid };
+enum class InputStatus { Ok, Eof, RecoverableError, FatalFramingError };
 
 struct PromptFrame {
   ReadFrameStatus status = ReadFrameStatus::Invalid;
@@ -47,7 +48,7 @@ struct PromptFrame {
 };
 
 struct InputMessage {
-  ReadFrameStatus status = ReadFrameStatus::Invalid;
+  InputStatus status = InputStatus::FatalFramingError;
   std::uint8_t type = 0;
   GenerateRequest generate;
   BackendError error;

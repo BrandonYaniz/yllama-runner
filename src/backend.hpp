@@ -11,7 +11,13 @@
 
 namespace yllama {
 
-struct BackendError { std::string code; std::string message; };
+enum class ErrorDisposition { Recoverable, Fatal };
+
+struct BackendError {
+  std::string code;
+  std::string message;
+  ErrorDisposition disposition = ErrorDisposition::Recoverable;
+};
 
 struct RunnerConfig {
   std::string model_path;

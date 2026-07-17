@@ -15,7 +15,9 @@ Start the child with:
 yllama-runner --protocol 2 --model PATH --ctx TOKENS --threads N --gpu-layers N
 ```
 
-`--gpu-layers` defaults to 0 (CPU). Model path, context, threads, GPU layers,
+`--gpu-layers` defaults to 0 (CPU-only); `-1` requests maximum/automatic
+llama.cpp offload, and positive values request that many layers. Values below
+`-1` are invalid. Model path, context, threads, GPU layers,
 and protocol are process-lifetime settings. All generation settings are in each
 Generate. Diagnostics are UTF-8 on stderr and must never be parsed as protocol.
 
@@ -58,7 +60,10 @@ Limits are constants in `src/frame.hpp`: outer payload 32 MiB, prompt 16 MiB,
 and error message 16 KiB. Lengths are validated before allocation. Empty stop
 strings are invalid. Unknown message types are recoverable when their declared
 payload was completely read; malformed/truncated framing is fatal from the
-client's perspective even if an Error was received.
+client's perspective even if an Error was received. The runner emits at most
+one structured Error for a truncated envelope/payload, oversized declared
+frame, or other loss of synchronization, flushes, and exits nonzero without
+attempting another parse.
 
 ## Input messages
 
@@ -138,6 +143,11 @@ a failed request and has no Completed. Request errors are recoverable; fatal
 backend/output errors are followed by process exit. Timing uses a monotonic
 clock. Output tokens count sampled non-EOS tokens, including buffered tokens
 later suppressed by a stop sequence.
+
+Backend errors carry an internal recoverable/fatal disposition. Invalid request,
+tokenization, context-fit, and request-specific sampler errors are recoverable.
+Decode, detokenization, invalid backend UTF-8, and backend invariant failures
+are fatal and cause a flushed Error followed by nonzero exit.
 
 Ready payload:
 

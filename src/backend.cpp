@@ -23,7 +23,8 @@ class FakeBackend final : public Backend {
                           const CancellationCallback& is_cancelled) override {
     if (!configured_) {
       return GenerateResult{BackendError{
-          "not_configured", "Backend must be configured before generation."}};
+          "not_configured", "Backend must be configured before generation.",
+          ErrorDisposition::Fatal}};
     }
 
     if (is_cancelled()) {

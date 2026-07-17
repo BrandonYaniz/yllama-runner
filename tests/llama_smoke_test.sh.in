@@ -36,6 +36,27 @@ for seed,max_tokens,temperature in ((7,8,0),(7,8,0),(8,4,0.7)):
     if term!=1 or not output.strip(): raise SystemExit('bad completion')
     outputs.append(output)
 if outputs[0]!=outputs[1]: raise SystemExit('same seed was not deterministic')
+# Prove cancellation is observed after streaming starts and the model remains resident.
+p.stdin.write(generate('Count upward forever: 1, 2, 3,',11,100000,0.7));p.stdin.flush()
+cancel_sent=False
+while True:
+    t,data=read(p)
+    if t==1:
+        n=struct.unpack_from('<I',data)[0];data[4:].decode('utf-8')
+        if n and not cancel_sent:
+            p.stdin.write(frame(2));p.stdin.flush();cancel_sent=True
+    elif t==4:
+        reason=struct.unpack_from('<B',data)[0]
+        if not cancel_sent or reason!=3: raise SystemExit('active cancellation failed')
+        break
+    elif t==3: raise SystemExit('cancellation Error '+repr(data))
+p.stdin.write(generate('Reply with OK.',12,4,0));p.stdin.flush();after=[]
+while True:
+    t,data=read(p)
+    if t==1: after.append(data[4:]);data[4:].decode('utf-8')
+    elif t==4: break
+    elif t==3: raise SystemExit('post-cancel Error '+repr(data))
+if not b''.join(after): raise SystemExit('generation after cancellation was empty')
 p.stdin.write(frame(3));p.stdin.flush();p.stdin.close()
 stderr=p.stderr.read().decode(errors='replace')
 if p.wait(timeout=10)!=0: raise SystemExit(stderr)
