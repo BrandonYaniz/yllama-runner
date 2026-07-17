@@ -1,12 +1,57 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "synchronized_yllmd_commit": "3a9b417a70eeaa103e49de9cc53eda0b957313b0",
+  "synchronized_catalog_revision": "2026.07.6-draft",
   "models": [
-    {"family":"Microsoft Phi-4 Mini","env":"YLLAMA_MODEL_PHI4_MINI","artifact":"Phi-4-mini-instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|user|>\nSay hello.<|end|>\n<|assistant|>"},
-    {"family":"Google Gemma 3 1B","env":"YLLAMA_MODEL_GEMMA3_1B","artifact":"gemma-3-1b-it-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<start_of_turn>user\nSay hello.<end_of_turn>\n<start_of_turn>model\n"},
-    {"family":"Meta Llama 3.2 1B","env":"YLLAMA_MODEL_LLAMA32_1B","artifact":"Llama-3.2-1B-Instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nSay hello.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"},
-    {"family":"Alibaba Qwen3 1.7B","env":"YLLAMA_MODEL_QWEN3_17B","artifact":"Qwen3-1.7B-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|im_start|>user\nSay hello.<|im_end|>\n<|im_start|>assistant\n"},
-    {"family":"Alibaba Qwen2.5 Coder 1.5B","env":"YLLAMA_MODEL_QWEN25_CODER_15B","artifact":"Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|im_start|>user\nPrint hello.<|im_end|>\n<|im_start|>assistant\n"},
-    {"family":"Mistral Nemo 12B","env":"YLLAMA_MODEL_MISTRAL_NEMO_12B","artifact":"Mistral-Nemo-Instruct-2407-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<s>[INST] Say hello. [/INST]"},
-    {"family":"IBM Granite 3.3 2B","env":"YLLAMA_MODEL_GRANITE33_2B","artifact":"granite-3.3-2b-instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|start_of_role|>user<|end_of_role|>Say hello.<|end_of_text|><|start_of_role|>assistant<|end_of_role|>"}
+    {
+      "family": "Microsoft Phi-4 Mini", "env": "YLLAMA_MODEL_PHI4_MINI",
+      "catalog_variant_id": "phi4-mini-instruct", "expected_filename": "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
+      "expected_size_bytes": 2491874688, "expected_sha256": "01999f17c39cc3074afae5e9c539bc82d45f2dd7faa3917c66cbef76fce8c0c2",
+      "quantization": "Q4_K_M", "prompt_template_id": "phi4-chat",
+      "prompt": "<|system|>Be concise.<|end|><|user|>Hello.<|end|><|assistant|>"
+    },
+    {
+      "family": "Google Gemma 3 1B", "env": "YLLAMA_MODEL_GEMMA3_1B",
+      "catalog_variant_id": "gemma3-1b-it", "expected_filename": "gemma-3-1b-it-Q4_K_M.gguf",
+      "expected_size_bytes": 806058240, "expected_sha256": "8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135",
+      "quantization": "Q4_K_M", "prompt_template_id": "gemma3-chat",
+      "prompt": "<bos><start_of_turn>user\nBe concise.\n\nHello.<end_of_turn>\n<start_of_turn>model\n"
+    },
+    {
+      "family": "Meta Llama 3.2 1B", "env": "YLLAMA_MODEL_LLAMA32_1B",
+      "catalog_variant_id": "llama32-1b-instruct", "expected_filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+      "expected_size_bytes": 807694464, "expected_sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+      "quantization": "Q4_K_M", "prompt_template_id": "llama3-instruct",
+      "prompt": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nBe concise.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nHello.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    },
+    {
+      "family": "Alibaba Qwen3 1.7B", "env": "YLLAMA_MODEL_QWEN3_17B",
+      "catalog_variant_id": "qwen3-1.7b", "expected_filename": null,
+      "expected_size_bytes": null, "expected_sha256": null,
+      "quantization": null, "prompt_template_id": "qwen3-chatml-no-thinking",
+      "catalog_status": "planned_unqualified",
+      "prompt": "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nHello.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    },
+    {
+      "family": "Alibaba Qwen2.5 Coder 1.5B", "env": "YLLAMA_MODEL_QWEN25_CODER_15B",
+      "catalog_variant_id": "qwen25-coder-1.5b-instruct", "expected_filename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "expected_size_bytes": 1117320768, "expected_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+      "quantization": "Q4_K_M", "prompt_template_id": "qwen2.5-chatml",
+      "prompt": "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nWrite hello world.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "family": "Mistral Nemo 12B", "env": "YLLAMA_MODEL_MISTRAL_NEMO_12B",
+      "catalog_variant_id": "mistral-nemo-12b-instruct", "expected_filename": "Mistral-Nemo-Instruct-2407-Q4_K_M.gguf",
+      "expected_size_bytes": 7477208192, "expected_sha256": "7c1a10d202d8788dbe5628dc962254d10654c853cae6aaeca0618f05490d4a46",
+      "quantization": "Q4_K_M", "prompt_template_id": "mistral-nemo-instruct",
+      "prompt": "<s>[INST]Be concise.\n\nHello.[/INST]"
+    },
+    {
+      "family": "IBM Granite 3.3 2B", "env": "YLLAMA_MODEL_GRANITE33_2B",
+      "catalog_variant_id": "granite3.3-2b-instruct", "expected_filename": "granite-3.3-2b-instruct-Q4_K_M.gguf",
+      "expected_size_bytes": 1545303328, "expected_sha256": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852",
+      "quantization": "Q4_K_M", "prompt_template_id": "granite3-chat",
+      "prompt": "<|start_of_role|>system<|end_of_role|>Be concise.<|end_of_text|>\n<|start_of_role|>user<|end_of_role|>Hello.<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+    }
   ]
 }

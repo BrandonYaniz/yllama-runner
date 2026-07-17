@@ -1,71 +1,247 @@
 #!/usr/bin/env python3
-"""Opt-in curated GGUF protocol-2 qualification; writes auditable JSON results."""
-import argparse, hashlib, json, os, platform, struct, subprocess, time
+"""Process-safe, catalog-exact protocol-2 release qualification."""
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import platform
+import selectors
+import struct
+import subprocess
+import threading
+import time
 
-def frame(t,p=b""): return bytes([t])+struct.pack("<I",len(p))+p
-def generate(prompt, seed=1):
-    p=struct.pack("<BBHI",1,0,0,32)+struct.pack("<ddidddQ",0.0,1.0,0,0.0,0.0,1.0,seed)
-    b=prompt.encode(); return frame(1,p+struct.pack("<I",len(b))+b)
-def read_frame(stream):
-    h=stream.read(5)
-    if len(h)!=5: raise RuntimeError("unexpected runner EOF")
-    t,n=struct.unpack("<BI",h)
-    if n>32<<20: raise RuntimeError("oversized output")
-    p=stream.read(n)
-    if len(p)!=n: raise RuntimeError("truncated output")
-    return t,p
+FRAME_LIMIT = 32 << 20
+STARTUP_TIMEOUT = 120.0
+REQUEST_TIMEOUT = 60.0
+CANCEL_TIMEOUT = 20.0
+SHUTDOWN_TIMEOUT = 10.0
+STDERR_LIMIT = 64 << 10
+
+def frame(kind, payload=b""):
+    return bytes([kind]) + struct.pack("<I", len(payload)) + payload
+
+def generate(prompt, seed=1, max_tokens=32):
+    payload = struct.pack("<BBHI", 1, 0, 0, max_tokens)
+    payload += struct.pack("<ddidddQ", 0.0, 1.0, 0, 0.0, 0.0, 1.0, seed)
+    encoded = prompt.encode("utf-8")
+    return frame(1, payload + struct.pack("<I", len(encoded)) + encoded)
+
+class FrameReader:
+    def __init__(self, stream):
+        self.fd = stream.fileno()
+        self.buffer = bytearray()
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.fd, selectors.EVENT_READ)
+
+    def exact(self, length, deadline):
+        while len(self.buffer) < length:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self.selector.select(remaining):
+                raise TimeoutError("protocol read timeout")
+            block = os.read(self.fd, min(65536, length - len(self.buffer)))
+            if not block:
+                raise RuntimeError("unexpected runner EOF")
+            self.buffer.extend(block)
+        result = bytes(self.buffer[:length])
+        del self.buffer[:length]
+        return result
+
+    def frame(self, timeout):
+        deadline = time.monotonic() + timeout
+        kind, length = struct.unpack("<BI", self.exact(5, deadline))
+        if length > FRAME_LIMIT:
+            raise RuntimeError("oversized runner output")
+        return kind, self.exact(length, deadline)
+
+class StderrCollector:
+    def __init__(self, stream):
+        self.stream = stream
+        self.data = bytearray()
+        self.thread = threading.Thread(target=self._run, daemon=False)
+        self.thread.start()
+
+    def _run(self):
+        for block in iter(lambda: self.stream.read(4096), b""):
+            if len(self.data) < STDERR_LIMIT:
+                self.data.extend(block[:STDERR_LIMIT - len(self.data)])
+
+    def finish(self):
+        self.thread.join(timeout=2)
+        return self.data.decode("utf-8", errors="replace")
+
 def sha256(path):
-    h=hashlib.sha256()
-    with open(path,"rb") as f:
-        for block in iter(lambda:f.read(1<<20),b""): h.update(block)
-    return h.hexdigest()
-def request(proc,prompt):
-    proc.stdin.write(generate(prompt));proc.stdin.flush(); chunks=[];completed=0;usage=None
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+def send(proc, data):
+    if proc.stdin is None:
+        raise RuntimeError("runner stdin unavailable")
+    proc.stdin.write(data)
+    proc.stdin.flush()
+
+def completed_payload(payload):
+    if len(payload) != 25:
+        raise RuntimeError("invalid Completed length")
+    return struct.unpack("<BIIQQ", payload)
+
+def request(proc, reader, prompt, timeout=REQUEST_TIMEOUT):
+    send(proc, generate(prompt))
+    chunks, terminals = [], 0
+    deadline = time.monotonic() + timeout
     while True:
-        t,p=read_frame(proc.stdout)
-        if t==1:
-            n=struct.unpack_from("<I",p)[0]; data=p[4:]
-            if n!=len(data): raise RuntimeError("bad Chunk length")
-            data.decode("utf-8");chunks.append(data)
-        elif t==4:
-            completed+=1; reason,inp,out,pu,gu=struct.unpack("<BIIQQ",p);usage=(inp,out)
-            break
-        elif t==3: raise RuntimeError("runner Error: "+repr(p))
-        else: raise RuntimeError(f"unexpected type {t}")
-    if completed!=1 or not b"".join(chunks) or not usage or min(usage)<=0: raise RuntimeError("invalid completion/output/usage")
-def cancel_request(proc,prompt):
-    proc.stdin.write(generate(prompt)+frame(2));proc.stdin.flush(); terminals=0
-    while True:
-        t,p=read_frame(proc.stdout)
-        if t==1: p[4:].decode("utf-8")
-        elif t==4:
-            terminals+=1; reason=struct.unpack_from("<B",p)[0]
-            if reason!=3 or terminals!=1: raise RuntimeError("Cancel did not complete as cancelled")
+        kind, payload = reader.frame(max(0.001, deadline - time.monotonic()))
+        if kind == 1:
+            length = struct.unpack_from("<I", payload)[0]
+            chunk = payload[4:]
+            if length != len(chunk):
+                raise RuntimeError("bad Chunk length")
+            chunk.decode("utf-8")
+            chunks.append(chunk)
+        elif kind == 4:
+            terminals += 1
+            reason, input_tokens, output_tokens, _, _ = completed_payload(payload)
+            if terminals != 1 or reason not in (0, 1, 2):
+                raise RuntimeError("invalid terminal completion")
+            if input_tokens <= 0 or output_tokens <= 0 or not b"".join(chunks):
+                raise RuntimeError("invalid output or usage")
             return
-        elif t==3: raise RuntimeError("Cancel produced Error")
+        elif kind == 3:
+            raise RuntimeError("runner Error: " + repr(payload))
+        else:
+            raise RuntimeError("unexpected output type " + str(kind))
+
+def cancel_after_chunk(proc, reader, prompt):
+    send(proc, generate(prompt, seed=11, max_tokens=100000))
+    sent_cancel = False
+    terminals = 0
+    deadline = time.monotonic() + CANCEL_TIMEOUT
+    while True:
+        kind, payload = reader.frame(max(0.001, deadline - time.monotonic()))
+        if kind == 1:
+            length = struct.unpack_from("<I", payload)[0]
+            chunk = payload[4:]
+            if length != len(chunk):
+                raise RuntimeError("bad cancellation Chunk length")
+            chunk.decode("utf-8")
+            if not sent_cancel:
+                send(proc, frame(2))
+                sent_cancel = True
+        elif kind == 4:
+            terminals += 1
+            reason, _, _, _, _ = completed_payload(payload)
+            if not sent_cancel:
+                raise RuntimeError("generation completed before cancellation")
+            if terminals != 1 or reason != 3:
+                raise RuntimeError("Cancel did not produce exactly one cancelled completion")
+            return
+        elif kind == 3:
+            raise RuntimeError("Cancel produced Error: " + repr(payload))
+
+def stop_process(proc, graceful=False):
+    if proc is None:
+        return
+    if proc.poll() is None and graceful:
+        try:
+            send(proc, frame(3))
+            proc.stdin.close()
+            proc.wait(timeout=SHUTDOWN_TIMEOUT)
+        except Exception:
+            pass
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+    if proc.stdin is not None and not proc.stdin.closed:
+        proc.stdin.close()
+    if proc.stdout is not None:
+        proc.stdout.close()
+
+def verify_artifact(model, path):
+    required = (model.get("expected_filename"), model.get("expected_size_bytes"),
+                model.get("expected_sha256"))
+    if any(value is None for value in required):
+        raise RuntimeError("yllmd catalog has no qualified artifact for this planned variant")
+    if pathlib.Path(path).name != model["expected_filename"]:
+        raise RuntimeError("unexpected basename: " + pathlib.Path(path).name)
+    actual_size = os.path.getsize(path)
+    if actual_size != model["expected_size_bytes"]:
+        raise RuntimeError(f"size mismatch: {actual_size}")
+    actual_hash = sha256(path)
+    if actual_hash != model["expected_sha256"]:
+        raise RuntimeError("SHA-256 mismatch: " + actual_hash)
+    return actual_hash
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument("--runner",required=True);ap.add_argument("--manifest",default=os.path.join(os.path.dirname(__file__),"models.json"));ap.add_argument("--results",required=True);a=ap.parse_args()
-    manifest=json.load(open(a.manifest)); results=[]
-    info=subprocess.check_output([a.runner,"--build-info"],text=True)
-    revision=next(x.split(": ",1)[1] for x in info.splitlines() if x.startswith("llama.cpp-revision:"));version=next(x.split(": ",1)[1] for x in info.splitlines() if x.startswith("runner-version:"))
-    for index,m in enumerate(manifest["models"]):
-        path=os.environ.get(m["env"]);record={"model_family":m["family"],"artifact_filename":m["artifact"],"quantization":m["quantization"],"llama_cpp_revision":revision,"runner_version":version,"os":platform.system(),"architecture":platform.machine(),"passed":False}
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runner", required=True)
+    parser.add_argument("--manifest", default=os.path.join(os.path.dirname(__file__), "models.json"))
+    parser.add_argument("--results", required=True)
+    args = parser.parse_args()
+    manifest = json.load(open(args.manifest, encoding="utf-8"))
+    build_info = subprocess.check_output([args.runner, "--build-info"], text=True, timeout=10)
+    revision = next(line.split(": ", 1)[1] for line in build_info.splitlines() if line.startswith("llama.cpp-revision:"))
+    version = next(line.split(": ", 1)[1] for line in build_info.splitlines() if line.startswith("runner-version:"))
+    results = []
+    for index, model in enumerate(manifest["models"]):
+        path = os.environ.get(model["env"])
+        command = [args.runner, "--protocol", "2", "--model", path or "<unset>", "--ctx", "2048", "--threads", str(os.cpu_count() or 1)]
+        record = {
+            "model_family": model["family"], "catalog_variant_id": model["catalog_variant_id"],
+            "expected_filename": model["expected_filename"], "expected_size_bytes": model["expected_size_bytes"],
+            "expected_sha256": model["expected_sha256"], "prompt_template_id": model["prompt_template_id"],
+            "quantization": model["quantization"], "llama_cpp_revision": revision,
+            "runner_version": version, "os": platform.system(), "architecture": platform.machine(),
+            "command": command, "build_info": build_info.strip(), "passed": False, "pid": None,
+        }
+        proc = reader = collector = None
+        graceful = False
         try:
-            if not path: raise RuntimeError(f"unset {m['env']}")
-            record["artifact_sha256"]=sha256(path)
-            proc=subprocess.Popen([a.runner,"--protocol","2","--model",path,"--ctx","2048","--threads",str(os.cpu_count() or 1)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-            t,_=read_frame(proc.stdout)
-            if t!=0x10: raise RuntimeError("missing Ready")
-            request(proc,m["prompt"]);request(proc,m["prompt"])
-            if index==0:
-                cancel_request(proc,m["prompt"]*64)
-                request(proc,m["prompt"])
-            proc.stdin.write(frame(3));proc.stdin.flush();proc.stdin.close()
-            if proc.wait(timeout=30)!=0: raise RuntimeError("unclean Shutdown")
-            record["passed"]=True
-        except Exception as exc: record["failure_details"]=str(exc)
-        results.append(record)
-    with open(a.results,"w") as f: json.dump({"generated_at":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),"results":results},f,indent=2)
-    raise SystemExit(0 if all(x["passed"] for x in results) else 1)
-if __name__=="__main__": main()
+            if not path:
+                raise RuntimeError("unset " + model["env"])
+            record["artifact_sha256"] = verify_artifact(model, path)
+            command[4] = path
+            proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+            record["pid"] = proc.pid
+            reader = FrameReader(proc.stdout)
+            collector = StderrCollector(proc.stderr)
+            kind, _ = reader.frame(STARTUP_TIMEOUT)
+            if kind != 0x10:
+                raise RuntimeError("missing Ready")
+            request(proc, reader, model["prompt"])
+            request(proc, reader, model["prompt"])
+            if index == 0:
+                original_pid = proc.pid
+                cancel_after_chunk(proc, reader, model["prompt"])
+                if proc.poll() is not None or proc.pid != original_pid:
+                    raise RuntimeError("runner did not remain resident after cancellation")
+                request(proc, reader, model["prompt"])
+            graceful = True
+            stop_process(proc, graceful=True)
+            graceful = False
+            if proc.returncode != 0:
+                raise RuntimeError("unclean Shutdown: " + str(proc.returncode))
+            record["passed"] = True
+        except Exception as exc:
+            record["failure_details"] = f"{type(exc).__name__}: {exc}; command={command!r}; build_info={build_info.strip()!r}"
+        finally:
+            stop_process(proc, graceful=graceful)
+            if collector is not None:
+                record["stderr"] = collector.finish()
+            results.append(record)
+    with open(args.results, "w", encoding="utf-8") as stream:
+        json.dump({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                   "synchronized_yllmd_commit": manifest["synchronized_yllmd_commit"],
+                   "synchronized_catalog_revision": manifest["synchronized_catalog_revision"],
+                   "results": results}, stream, indent=2)
+    raise SystemExit(0 if all(result["passed"] for result in results) else 1)
+
+if __name__ == "__main__":
+    main()
