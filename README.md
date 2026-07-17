@@ -20,7 +20,7 @@ This is useful for:
 ## Goals
 
 - Load one local GGUF model.
-- Accept prompt frames over stdio.
+- Accept protocol 1 or protocol 2 frames over stdio.
 - Stream generated text chunks as binary frames.
 - Keep the model resident across serial requests.
 - Exit cleanly on stdin EOF.
@@ -36,7 +36,6 @@ This is useful for:
 - No request queueing.
 - No JSON protocol.
 - No request ids.
-- No token usage reporting.
 - No user-facing daemon behavior.
 
 ## Build
@@ -45,16 +44,13 @@ Requirements:
 
 - CMake 3.16 or newer
 - C++17 compiler
-- A local llama.cpp build or install
 - A local GGUF model for runtime use
 
-Configure against an existing local llama.cpp build, then build and run tests:
+The default build fetches the immutable llama.cpp revision recorded in
+`CMakeLists.txt`, then builds it with the runner:
 
 ```sh
-cmake -S . -B build \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build
 ```
@@ -73,7 +69,14 @@ The runner uses llama.cpp as its production backend. Tests still use an internal
 
 ## Current status
 
-The runner can print its version, load a local GGUF model through llama.cpp, read length-prefixed prompt frames, and stream generated text chunk frames.
+The runner loads one GGUF model, emits protocol 2 readiness, accepts sequential
+per-request generation settings, supports in-band cancellation and stop strings,
+and streams valid UTF-8 with structured completion metadata. Protocol 1 remains
+the default for migration compatibility; new yllmd versions pass `--protocol 2`.
+
+Process flags are `--model`, `--ctx`, `--threads`, `--gpu-layers` (default 0),
+and `--protocol`. See [the yllmd protocol 2 migration contract](docs/yllmd-protocol-v2-migration.md).
+`--build-info` reports the runner and dependency identity.
 
 Current limitations:
 
@@ -81,7 +84,7 @@ Current limitations:
 - Serial generation only.
 - No request queueing.
 - No network API.
-- llama.cpp and GGUF model files are supplied by the developer or packager.
+- GGUF model files are supplied by the developer or packager.
 
 ## License
 

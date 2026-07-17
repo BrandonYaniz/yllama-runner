@@ -1,42 +1,14 @@
-# Versioning and Compatibility
+# Versioning and compatibility
 
-`yllama-runner` uses calendar versioning for releases.
+Runner catalog releases use `YY.MM.DD.NN` or `YY.MM.DD.NN-Release`. The final
+two digits are a same-day sequence. The current release is
+`26.07.16.01-Release`.
 
-Public releases use:
+Wire protocol versions are independent unsigned integers and are never inferred
+from the release string. This release supports protocols 1 and 2. Protocol 1 is
+the compatibility default; protocol 2 is selected with `--protocol 2`. See
+[the protocol 2 contract](yllmd-protocol-v2-migration.md) for the deprecation
+policy.
 
-```text
-YYYY.MM.DD
-```
-
-Prereleases use:
-
-```text
-YYYY.MM.DD-alpha.N
-YYYY.MM.DD-beta.N
-YYYY.MM.DD-rc.N
-```
-
-The release version is available from:
-
-```sh
-yllama-runner --version
-```
-
-## Compatibility
-
-The runner is pre-release and has one internal compatibility contract: the
-binary stdio frame protocol used by a parent process such as `yllmd`.
-
-The runner:
-
-- reads length-prefixed prompt frames from stdin
-- writes chunk, done, or error frames to stdout
-- writes diagnostics to stderr
-
-There is no separate protocol negotiation or startup hello event. During
-pre-release development, breaking transport changes may be made directly across
-`yllama-runner` and `yllmd`.
-
-## Release Notes
-
-Each release should call out whether the runner frame contract changed.
+`yllama-runner --version` prints the catalog release. `--build-info` also prints
+supported protocols, the llama.cpp commit, backends, OS, and architecture.
