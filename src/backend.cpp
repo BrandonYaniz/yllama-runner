@@ -46,6 +46,11 @@ class FakeBackend final : public Backend {
 
 }  // namespace
 
+TokenizationFlags tokenization_flags(TokenizationMode mode) {
+  return mode == TokenizationMode::Raw ? TokenizationFlags{true, false}
+                                       : TokenizationFlags{false, true};
+}
+
 std::optional<BackendError> validate_generate_request(const GenerateRequest& r) {
   const auto& o = r.options;
   auto finite = [](double v) { return std::isfinite(v); };

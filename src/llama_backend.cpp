@@ -83,8 +83,9 @@ std::optional<std::vector<llama_token>> tokenize_prompt(
     const llama_vocab* vocab,
     std::string_view prompt,
     TokenizationMode mode) {
-  const bool add_special = mode == TokenizationMode::Raw;
-  const bool parse_special = mode == TokenizationMode::Preformatted;
+  const TokenizationFlags flags = tokenization_flags(mode);
+  const bool add_special = flags.add_special;
+  const bool parse_special = flags.parse_special;
   const int count = -llama_tokenize(vocab, prompt.data(), prompt.size(), nullptr,
                                     0, add_special, parse_special);
   if (count <= 0) {

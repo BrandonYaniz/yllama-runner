@@ -29,6 +29,8 @@ struct ConfigureResult {
 };
 
 enum class TokenizationMode : std::uint8_t { Raw = 0, Preformatted = 1 };
+struct TokenizationFlags { bool add_special; bool parse_special; };
+TokenizationFlags tokenization_flags(TokenizationMode mode);
 enum class FinishReason : std::uint8_t { Eos = 0, Length = 1, Stop = 2, Cancelled = 3 };
 
 struct GenerateOptions {

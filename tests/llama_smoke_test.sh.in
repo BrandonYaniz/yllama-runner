@@ -6,8 +6,8 @@ model=$2
 import struct, subprocess, sys
 runner,model=sys.argv[1:]
 def frame(t,p=b''): return bytes([t])+struct.pack('<I',len(p))+p
-def generate(prompt,seed):
-    b=prompt.encode();p=struct.pack('<BBHI',1,0,0,8)+struct.pack('<ddidddQ',0,1,0,0,0,1,seed)+struct.pack('<I',len(b))+b
+def generate(prompt,seed,max_tokens=8,temperature=0):
+    b=prompt.encode();p=struct.pack('<BBHI',1,0,0,max_tokens)+struct.pack('<ddidddQ',temperature,1,0,0,0,1,seed)+struct.pack('<I',len(b))+b
     return frame(1,p)
 def read(proc):
     h=proc.stdout.read(5)
@@ -18,8 +18,9 @@ def read(proc):
 p=subprocess.Popen([runner,'--protocol','2','--model',model,'--ctx','1024','--threads','4'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 t,_=read(p)
 if t!=0x10: raise SystemExit('Ready not first')
-for seed in (7,8):
-    p.stdin.write(generate('Complete briefly: The sky is',seed));p.stdin.flush();chunks=[];term=0
+outputs=[]
+for seed,max_tokens,temperature in ((7,8,0),(7,8,0),(8,4,0.7)):
+    p.stdin.write(generate('Complete briefly: The sky is',seed,max_tokens,temperature));p.stdin.flush();chunks=[];term=0
     while True:
         t,data=read(p)
         if t==1:
@@ -31,7 +32,10 @@ for seed in (7,8):
             if inp<=0 or out<=0: raise SystemExit('bad usage')
             break
         elif t==3: raise SystemExit('runner Error '+repr(data))
-    if term!=1 or not b''.join(chunks).strip(): raise SystemExit('bad completion')
+    output=b''.join(chunks)
+    if term!=1 or not output.strip(): raise SystemExit('bad completion')
+    outputs.append(output)
+if outputs[0]!=outputs[1]: raise SystemExit('same seed was not deterministic')
 p.stdin.write(frame(3));p.stdin.flush();p.stdin.close()
 stderr=p.stderr.read().decode(errors='replace')
 if p.wait(timeout=10)!=0: raise SystemExit(stderr)

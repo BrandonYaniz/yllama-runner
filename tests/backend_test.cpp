@@ -4,6 +4,12 @@
 #include <string>
 
 int main() {
+  {
+    const auto raw = yllama::tokenization_flags(yllama::TokenizationMode::Raw);
+    const auto formatted = yllama::tokenization_flags(yllama::TokenizationMode::Preformatted);
+    assert(raw.add_special && !raw.parse_special);
+    assert(!formatted.add_special && formatted.parse_special);
+  }
   auto backend = yllama::make_fake_backend();
 
   yllama::GenerateOptions options;

@@ -176,6 +176,17 @@ if(YLLAMA_BUILD_TESTS)
 
   add_executable(stream_filter_test tests/stream_filter_test.cpp)
   target_link_libraries(stream_filter_test PRIVATE yllama_core)
+  if(MSVC)
+    target_compile_options(frame_test PRIVATE /UNDEBUG)
+    target_compile_options(backend_test PRIVATE /UNDEBUG)
+    target_compile_options(runner_test PRIVATE /UNDEBUG)
+    target_compile_options(stream_filter_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(frame_test PRIVATE -UNDEBUG)
+    target_compile_options(backend_test PRIVATE -UNDEBUG)
+    target_compile_options(runner_test PRIVATE -UNDEBUG)
+    target_compile_options(stream_filter_test PRIVATE -UNDEBUG)
+  endif()
   add_test(NAME utf8-stop-filter COMMAND stream_filter_test)
 
   configure_file(tests/install_relocation_test.sh.in
