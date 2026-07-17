@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "models": [
+    {"family":"Microsoft Phi-4 Mini","env":"YLLAMA_MODEL_PHI4_MINI","artifact":"Phi-4-mini-instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|user|>\nSay hello.<|end|>\n<|assistant|>"},
+    {"family":"Google Gemma 3 1B","env":"YLLAMA_MODEL_GEMMA3_1B","artifact":"gemma-3-1b-it-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<start_of_turn>user\nSay hello.<end_of_turn>\n<start_of_turn>model\n"},
+    {"family":"Meta Llama 3.2 1B","env":"YLLAMA_MODEL_LLAMA32_1B","artifact":"Llama-3.2-1B-Instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nSay hello.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"},
+    {"family":"Alibaba Qwen3 1.7B","env":"YLLAMA_MODEL_QWEN3_17B","artifact":"Qwen3-1.7B-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|im_start|>user\nSay hello.<|im_end|>\n<|im_start|>assistant\n"},
+    {"family":"Alibaba Qwen2.5 Coder 1.5B","env":"YLLAMA_MODEL_QWEN25_CODER_15B","artifact":"Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|im_start|>user\nPrint hello.<|im_end|>\n<|im_start|>assistant\n"},
+    {"family":"Mistral Nemo 12B","env":"YLLAMA_MODEL_MISTRAL_NEMO_12B","artifact":"Mistral-Nemo-Instruct-2407-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<s>[INST] Say hello. [/INST]"},
+    {"family":"IBM Granite 3.3 2B","env":"YLLAMA_MODEL_GRANITE33_2B","artifact":"granite-3.3-2b-instruct-Q4_K_M.gguf","quantization":"Q4_K_M","prompt":"<|start_of_role|>user<|end_of_role|>Say hello.<|end_of_text|><|start_of_role|>assistant<|end_of_role|>"}
+  ]
+}
