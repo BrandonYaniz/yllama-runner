@@ -1,11 +1,9 @@
 # Curated model qualification
 
 The fixtures are synchronized to yllmd commit
-`3a9b417a70eeaa103e49de9cc53eda0b957313b0`, embedded catalog revision
-`2026.07.6-draft`. The manifest strings are byte fixtures and the contract test
-compares every UTF-8 byte. Qwen3 1.7B is still planned in that catalog, so its
-missing artifact identity is explicit and qualification fails rather than
-accepting an unverified file.
+`c9fbab3118e6a2e917fd79971ea69b2f593bbb72`, embedded catalog revision
+`2026.07.7-draft`. The manifest strings are byte fixtures and the contract test
+compares every UTF-8 byte.
 
 Set each environment variable named in `models.json` to the exact local GGUF,
 then run `python3 qualification/qualify.py --runner build/yllama-runner

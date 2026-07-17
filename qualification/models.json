@@ -1,7 +1,7 @@
 {
   "schema": 2,
-  "synchronized_yllmd_commit": "3a9b417a70eeaa103e49de9cc53eda0b957313b0",
-  "synchronized_catalog_revision": "2026.07.6-draft",
+  "synchronized_yllmd_commit": "c9fbab3118e6a2e917fd79971ea69b2f593bbb72",
+  "synchronized_catalog_revision": "2026.07.7-draft",
   "models": [
     {
       "family": "Microsoft Phi-4 Mini", "env": "YLLAMA_MODEL_PHI4_MINI",
@@ -26,10 +26,9 @@
     },
     {
       "family": "Alibaba Qwen3 1.7B", "env": "YLLAMA_MODEL_QWEN3_17B",
-      "catalog_variant_id": "qwen3-1.7b", "expected_filename": null,
-      "expected_size_bytes": null, "expected_sha256": null,
-      "quantization": null, "prompt_template_id": "qwen3-chatml-no-thinking",
-      "catalog_status": "planned_unqualified",
+      "catalog_variant_id": "qwen3-1.7b", "expected_filename": "Qwen3-1.7B-Q8_0.gguf",
+      "expected_size_bytes": 1834426016, "expected_sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "quantization": "Q8_0", "prompt_template_id": "qwen3-nonthinking-chatml",
       "prompt": "<|im_start|>system\nBe concise.<|im_end|>\n<|im_start|>user\nHello.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
     },
     {

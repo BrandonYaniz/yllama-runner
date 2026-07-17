@@ -5,8 +5,8 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 manifest = json.loads((root / "qualification" / "models.json").read_text(encoding="utf-8"))
-assert manifest["synchronized_yllmd_commit"] == "3a9b417a70eeaa103e49de9cc53eda0b957313b0"
-assert manifest["synchronized_catalog_revision"] == "2026.07.6-draft"
+assert manifest["synchronized_yllmd_commit"] == "c9fbab3118e6a2e917fd79971ea69b2f593bbb72"
+assert manifest["synchronized_catalog_revision"] == "2026.07.7-draft"
 expected = {
     "phi4-mini-instruct": "<|system|>Be concise.<|end|><|user|>Hello.<|end|><|assistant|>",
     "gemma3-1b-it": "<bos><start_of_turn>user\nBe concise.\n\nHello.<end_of_turn>\n<start_of_turn>model\n",
@@ -24,10 +24,11 @@ for variant, prompt in expected.items():
     for field in ("catalog_variant_id", "expected_filename", "expected_size_bytes",
                   "expected_sha256", "prompt_template_id"):
         assert field in entry
-for variant, entry in entries.items():
-    if variant == "qwen3-1.7b":
-        assert entry["catalog_status"] == "planned_unqualified"
-        assert entry["expected_filename"] is None
-    else:
-        assert entry["expected_size_bytes"] > 0
-        assert len(entry["expected_sha256"]) == 64
+for entry in entries.values():
+    assert entry["expected_size_bytes"] > 0
+    assert len(entry["expected_sha256"]) == 64
+
+qwen3 = entries["qwen3-1.7b"]
+assert qwen3["expected_filename"] == "Qwen3-1.7B-Q8_0.gguf"
+assert qwen3["quantization"] == "Q8_0"
+assert qwen3["prompt_template_id"] == "qwen3-nonthinking-chatml"

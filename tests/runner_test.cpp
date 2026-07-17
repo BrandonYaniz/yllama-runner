@@ -89,7 +89,10 @@ std::string error_frame(const std::string& text) {
 }  // namespace
 
 int main() {
-  const yllama::RunnerConfig config{"/models/fast/model.gguf", 8192, 4};
+  yllama::RunnerConfig config;
+  config.model_path = "/models/fast/model.gguf";
+  config.context_tokens = 8192;
+  config.threads = 4;
   const yllama::GenerateOptions options;
 
   {

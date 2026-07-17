@@ -73,8 +73,11 @@ int main() {
   }
 
   {
-    const auto result =
-        backend->configure(yllama::RunnerConfig{"/models/fast/model.gguf", 8192, 4});
+    yllama::RunnerConfig config;
+    config.model_path = "/models/fast/model.gguf";
+    config.context_tokens = 8192;
+    config.threads = 4;
+    const auto result = backend->configure(config);
     assert(!result.error.has_value());
     assert(result.model_path == "/models/fast/model.gguf");
     assert(result.context_tokens == 8192);
