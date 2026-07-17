@@ -1,120 +1,39 @@
-# Build
+# Build and package
 
-`yllama-runner` is a C++ runner around llama.cpp.
-
-## Requirements
-
-- C++17 or newer compiler
-- CMake
-- A local llama.cpp build or install
-
-The project does not download llama.cpp during configuration. Build or install llama.cpp separately, then pass explicit paths.
-
-## Build
+Requirements are CMake 3.16+, a C++17 compiler, Git, and a local GGUF only for
+smoke testing. The production build fetches the immutable llama.cpp commit in
+`CMakeLists.txt`:
 
 ```sh
-cmake -S . -B build \
-  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES=/path/to/libllama.a
-cmake --build build
-ctest --test-dir build
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --parallel
+ctest --test-dir build-release --output-on-failure
+cmake --install build-release --prefix staging
 ```
 
-This path is currently verified on macOS with Apple clang. FreeBSD and Linux verification are planned before the beta build.
+On macOS arm64 llama.cpp enables Metal and Accelerate when available. Linux
+amd64/arm64 and FreeBSD amd64 use CPU backends. Release builds are static by
+default. When shared libraries are explicitly enabled, installed lookup is
+relative via `@loader_path` on macOS and `$ORIGIN` on ELF. Release artifacts
+must pass `install-relocation`, which copies the executable to a fresh temporary
+directory and rejects the original build directory in runtime paths.
 
-## llama.cpp options
-
-`YLLAMA_RELEASE_VERSION` sets the public version printed by `yllama-runner --version`. The default is the current beta release version.
-
-`YLLAMA_LLAMA_CPP_LIBRARIES` accepts a semicolon-separated list when the local llama.cpp build needs more than one library.
-
-For local testing, `deps/` is ignored by git and can hold a temporary llama.cpp checkout or build artifacts. That directory is not part of the package.
-
-The runner loads the configured GGUF model at process startup and streams generated text as binary stdout frames for each length-prefixed stdin prompt.
-
-An opt-in smoke test can run the built runner against a local GGUF model:
+For an opt-in real model test:
 
 ```sh
-cmake -S . -B build-llama \
+cmake -S . -B build-release \
   -DYLLAMA_ENABLE_LLAMA_SMOKE_TEST=ON \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES='/path/to/libllama.dylib;/path/to/libggml.dylib' \
-  -DYLLAMA_LLAMA_SMOKE_MODEL_PATH=/path/to/model.gguf \
-  -DYLLAMA_LLAMA_SMOKE_LIBRARY_PATH=/path/to/runtime/libs
-cmake --build build-llama
-ctest --test-dir build-llama --output-on-failure
+  -DYLLAMA_LLAMA_SMOKE_MODEL_PATH=/path/to/small-model.gguf
+cmake --build build-release --parallel
+ctest --test-dir build-release --output-on-failure
 ```
 
-The smoke test is disabled by default because it requires a local model and a matching llama.cpp build.
+The smoke test loads the model, validates Ready, performs two requests in the
+same process, checks UTF-8 and usage metadata, and sends Shutdown. The local
+development override variables `YLLAMA_LLAMA_CPP_INCLUDE_DIR`,
+`YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS`, and `YLLAMA_LLAMA_CPP_LIBRARIES` remain
+available, but external shared-library builds are not release artifacts.
 
-## Install
-
-```sh
-cmake --install build
-```
-
-By default, the runner installs to `${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBEXECDIR}/yllama-runner`. With the default GNU install layout, that is `libexec/yllama-runner` under the chosen prefix.
-
-If the runner links shared llama.cpp libraries, those libraries must be discoverable at runtime:
-
-- Use `CMAKE_INSTALL_RPATH` when building a package-style install.
-- Use `DYLD_LIBRARY_PATH` for local macOS testing.
-- Use `LD_LIBRARY_PATH` for local Linux or FreeBSD testing.
-- Use static llama.cpp libraries when the package should avoid runtime library path setup.
-
-Example with an install rpath:
-
-```sh
-cmake -S . -B build \
-  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR=/path/to/llama.cpp/include \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS=/path/to/llama.cpp/ggml/include \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES='/path/to/llama/lib/libllama.dylib;/path/to/llama/lib/libggml.dylib' \
-  -DCMAKE_INSTALL_PREFIX=/tmp/yllama-runner-install \
-  -DCMAKE_INSTALL_RPATH=/path/to/llama/lib
-cmake --build build
-cmake --install build
-/tmp/yllama-runner-install/libexec/yllama-runner --version
-```
-
-## Runtime behavior
-
-The runner does not listen on any network port.
-
-It uses:
-
-- stdin for prompt frames
-- stdout for generated text frames
-- stderr for runner diagnostics
-
-llama.cpp diagnostics are suppressed by default to keep manual runs readable. Configure with `YLLAMA_ENABLE_LLAMA_LOGS=ON` when investigating model loading or backend issues.
-
-## macOS beta verification
-
-The current macOS beta path uses a local llama.cpp build and a local lightweight GGUF model under ignored `deps/` content. Adjust paths if llama.cpp is installed elsewhere.
-
-```sh
-LLAMA_ROOT="$PWD/deps/llama.cpp"
-LLAMA_LIB_DIR="$LLAMA_ROOT/build-cpu/bin"
-MODEL="$PWD/deps/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
-PREFIX="/tmp/yllama-runner-beta"
-
-cmake -S . -B build-beta-macos \
-  -DYLLAMA_RELEASE_VERSION=2026.05.31-beta.1 \
-  -DYLLAMA_ENABLE_LLAMA_SMOKE_TEST=ON \
-  -DYLLAMA_LLAMA_CPP_INCLUDE_DIR="$LLAMA_ROOT/include" \
-  -DYLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS="$LLAMA_ROOT/ggml/include" \
-  -DYLLAMA_LLAMA_CPP_LIBRARIES="$LLAMA_LIB_DIR/libllama.dylib;$LLAMA_LIB_DIR/libggml.dylib;$LLAMA_LIB_DIR/libggml-cpu.dylib;$LLAMA_LIB_DIR/libggml-blas.dylib;$LLAMA_LIB_DIR/libggml-base.dylib" \
-  -DYLLAMA_LLAMA_SMOKE_MODEL_PATH="$MODEL" \
-  -DYLLAMA_LLAMA_SMOKE_LIBRARY_PATH="$LLAMA_LIB_DIR" \
-  -DCMAKE_INSTALL_PREFIX="$PREFIX" \
-  -DCMAKE_INSTALL_RPATH="$LLAMA_LIB_DIR"
-
-cmake --build build-beta-macos
-ctest --test-dir build-beta-macos --output-on-failure
-cmake --install build-beta-macos
-"$PREFIX/libexec/yllama-runner" --version
-```
+The default `--gpu-layers` is 0. `--build-info` identifies compiled backends and
+the pinned dependency. llama.cpp logs are suppressed unless configured with
+`-DYLLAMA_ENABLE_LLAMA_LOGS=ON`.

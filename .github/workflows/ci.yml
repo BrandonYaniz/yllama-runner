@@ -1,0 +1,31 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS-arm64
+          - os: ubuntu-24.04
+            name: Linux-amd64
+          - os: ubuntu-24.04-arm
+            name: Linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+      - run: cmake --install build --prefix "$RUNNER_TEMP/install"
+      - run: build/yllama-runner --build-info | grep -F '26.07.16.01-Release'
+      - run: grep -F '26.07.16.01-Release' docs/versioning.md
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y cmake git
+          run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel 2 && ctest --test-dir build --output-on-failure
