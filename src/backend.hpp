@@ -24,14 +24,6 @@ struct RunnerConfig {
   int context_tokens = 0;
   int threads = 0;
   int gpu_layers = 0;
-  std::uint16_t protocol = 1;
-  std::string runner_version;
-};
-
-struct ConfigureResult {
-  std::optional<BackendError> error;
-  std::string model_path;
-  int context_tokens = 0;
 };
 
 enum class TokenizationMode : std::uint8_t { Raw = 0, Preformatted = 1 };
@@ -59,8 +51,6 @@ struct GenerateResult {
   FinishReason finish_reason = FinishReason::Eos;
   std::uint32_t input_tokens = 0;
   std::uint32_t output_tokens = 0;
-  std::uint64_t prompt_microseconds = 0;
-  std::uint64_t generation_microseconds = 0;
 };
 
 using DeltaCallback = std::function<bool(std::string_view text)>;
@@ -69,7 +59,7 @@ using CancellationCallback = std::function<bool()>;
 class Backend {
  public:
   virtual ~Backend() = default;
-  virtual ConfigureResult configure(const RunnerConfig& config) = 0;
+  virtual std::optional<BackendError> configure(const RunnerConfig& config) = 0;
   virtual GenerateResult generate(std::string_view prompt,
                                   const GenerateOptions& options,
                                   const DeltaCallback& on_delta,

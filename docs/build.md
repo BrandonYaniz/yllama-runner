@@ -32,7 +32,7 @@ ctest --test-dir build-release --output-on-failure
 ```
 
 The smoke test loads the model, validates Ready, performs two requests in the
-same process, checks UTF-8 and usage metadata, and sends Shutdown. The local
+same process, checks UTF-8 and usage metadata, and closes stdin. The local
 development override variables `YLLAMA_LLAMA_CPP_INCLUDE_DIR`,
 `YLLAMA_LLAMA_CPP_EXTRA_INCLUDE_DIRS`, and `YLLAMA_LLAMA_CPP_LIBRARIES` remain
 available, but external shared-library builds are not release artifacts.

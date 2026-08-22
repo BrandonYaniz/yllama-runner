@@ -7,7 +7,6 @@ Use this template for each `yllama-runner` release.
 ## Compatibility
 
 - Release version: YYYY.MM.DD
-- Runner protocol version: 1
 
 ## Breaking Changes
 

@@ -13,8 +13,8 @@
 namespace {
 class FixtureBackend final : public yllama::Backend {
  public:
-  yllama::ConfigureResult configure(const yllama::RunnerConfig& config) override {
-    return {std::nullopt, config.model_path, config.context_tokens};
+  std::optional<yllama::BackendError> configure(const yllama::RunnerConfig&) override {
+    return std::nullopt;
   }
 
   yllama::GenerateResult generate(
@@ -65,10 +65,6 @@ int main() {
   config.model_path = "fixture.gguf";
   config.context_tokens = 2048;
   config.threads = 1;
-  config.protocol = 2;
-  config.runner_version = "fixture";
-  yllama::GenerateOptions legacy;
   FixtureBackend backend;
-  return yllama::run_stdio(std::cin, std::cout, std::cerr, config, legacy,
-                           backend);
+  return yllama::run_stdio(std::cin, std::cout, std::cerr, config, backend);
 }

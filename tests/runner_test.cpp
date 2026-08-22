@@ -1,33 +1,28 @@
 #include "runner.hpp"
 
 #include <cassert>
-#include <memory>
+#include <cstring>
 #include <sstream>
 #include <string>
-#include <cstring>
 
 #include "backend.hpp"
 #include "frame.hpp"
 
 namespace {
-
 class EchoBackend final : public yllama::Backend {
  public:
-  yllama::ConfigureResult configure(const yllama::RunnerConfig& config) override {
+  std::optional<yllama::BackendError> configure(const yllama::RunnerConfig&) override {
     ++configure_count;
-    return yllama::ConfigureResult{std::nullopt, config.model_path,
-                                   config.context_tokens};
+    return configure_error;
   }
 
   yllama::GenerateResult generate(
-      std::string_view prompt,
-      const yllama::GenerateOptions&,
+      std::string_view prompt, const yllama::GenerateOptions&,
       const yllama::DeltaCallback& on_delta,
-      const yllama::CancellationCallback&) override {
+      const yllama::CancellationCallback& is_cancelled) override {
     ++generate_count;
     if (prompt == "fail") {
-      return yllama::GenerateResult{
-          yllama::BackendError{"invalid_prompt", "prompt rejected"}};
+      return yllama::GenerateResult{yllama::BackendError{"invalid_prompt", "prompt rejected"}};
     }
     if (prompt == "fatal") {
       yllama::GenerateResult result;
@@ -35,147 +30,107 @@ class EchoBackend final : public yllama::Backend {
                                           yllama::ErrorDisposition::Fatal};
       return result;
     }
-    if (!on_delta("echo:") || !on_delta(prompt)) {
-      yllama::GenerateResult cancelled;
-      cancelled.finish_reason = yllama::FinishReason::Cancelled;
-      return cancelled;
-    }
     yllama::GenerateResult result;
+    if (is_cancelled() || !on_delta("echo:")) {
+      result.finish_reason = yllama::FinishReason::Cancelled;
+      return result;
+    }
+    on_delta(prompt);
     result.input_tokens = 1;
     result.output_tokens = 2;
     return result;
   }
 
+  std::optional<yllama::BackendError> configure_error;
   int configure_count = 0;
   int generate_count = 0;
 };
 
-std::string u32_le(unsigned int value) {
-  std::string out(4, '\0');
-  out[0] = static_cast<char>(value & 0xff);
-  out[1] = static_cast<char>((value >> 8) & 0xff);
-  out[2] = static_cast<char>((value >> 16) & 0xff);
-  out[3] = static_cast<char>((value >> 24) & 0xff);
+std::string u32(unsigned int value) {
+  std::string out;
+  for (int i = 0; i < 4; ++i) out.push_back(static_cast<char>(value >> (8 * i)));
   return out;
 }
-
-std::string prompt_frame(const std::string& prompt) {
-  return u32_le(static_cast<unsigned int>(prompt.size())) + prompt;
-}
-
-std::string u16_le(unsigned int value){return std::string{static_cast<char>(value),static_cast<char>(value>>8)};}
-std::string u64_le(std::uint64_t value){std::string s;for(int i=0;i<8;++i)s.push_back(static_cast<char>(value>>(i*8)));return s;}
-std::string f64_le(double value){std::uint64_t bits;std::memcpy(&bits,&value,8);return u64_le(bits);}
-std::string v2_generate(const std::string& prompt){std::string p("\x00\x00",2);p+=u16_le(0)+u32_le(8)+f64_le(0)+f64_le(1)+u32_le(0)+f64_le(0)+f64_le(0)+f64_le(1)+u64_le(1)+u32_le(prompt.size())+prompt;return std::string("\x01",1)+u32_le(p.size())+p;}
-std::string v2_shutdown(){return std::string("\x03\x00\x00\x00\x00",5);}
-
-std::string chunk_frame(const std::string& text) {
-  return std::string(1, static_cast<char>(yllama::kFrameChunk)) +
-         u32_le(static_cast<unsigned int>(text.size())) + text;
-}
-
-std::string done_frame() {
-  return std::string(1, static_cast<char>(yllama::kFrameDone));
-}
-
-std::string error_frame(const std::string& text) {
-  std::string out(1, static_cast<char>(yllama::kFrameError));
-  out.push_back(static_cast<char>(text.size() & 0xff));
-  out.push_back(static_cast<char>((text.size() >> 8) & 0xff));
-  out += text;
+std::string u64(std::uint64_t value) {
+  std::string out;
+  for (int i = 0; i < 8; ++i) out.push_back(static_cast<char>(value >> (8 * i)));
   return out;
 }
+std::string f64(double value) {
+  std::uint64_t bits;
+  std::memcpy(&bits, &value, sizeof(value));
+  return u64(bits);
+}
+std::string envelope(unsigned char type, const std::string& payload = {}) {
+  return std::string(1, static_cast<char>(type)) + u32(payload.size()) + payload;
+}
+std::string generate(const std::string& prompt) {
+  std::string payload("\x00\x00", 2);
+  payload += u32(8) + f64(0) + f64(1) + u32(0) + f64(0) + f64(0) +
+             f64(1) + u64(1) + prompt;
+  return envelope(yllama::kMessageGenerate, payload);
+}
 
+std::size_t count_frames(const std::string& bytes, unsigned char type) {
+  std::size_t count = 0;
+  for (std::size_t offset = 0; offset + 5 <= bytes.size();) {
+    const auto frame_type = static_cast<unsigned char>(bytes[offset]);
+    const auto size = static_cast<unsigned char>(bytes[offset + 1]) |
+        (static_cast<unsigned char>(bytes[offset + 2]) << 8) |
+        (static_cast<unsigned char>(bytes[offset + 3]) << 16) |
+        (static_cast<unsigned char>(bytes[offset + 4]) << 24);
+    assert(offset + 5 + size <= bytes.size());
+    if (frame_type == type) ++count;
+    offset += 5 + size;
+  }
+  return count;
+}
 }  // namespace
 
 int main() {
-  yllama::RunnerConfig config;
-  config.model_path = "/models/fast/model.gguf";
-  config.context_tokens = 8192;
-  config.threads = 4;
-  const yllama::GenerateOptions options;
+  yllama::RunnerConfig config{"/models/model.gguf", 8192, 4, 0};
 
   {
     EchoBackend backend;
-    std::istringstream in(prompt_frame("one") + prompt_frame("two"));
-    std::ostringstream out;
-    std::ostringstream err;
-
-    const int status =
-        yllama::run_stdio(in, out, err, config, options, backend);
-    assert(status == 0);
-    assert(err.str().empty());
-    assert(backend.configure_count == 1);
+    std::istringstream in(generate("one") + generate("two"));
+    std::ostringstream out, err;
+    assert(yllama::run_stdio(in, out, err, config, backend) == 0);
+    assert(backend.configure_count == 1 && backend.generate_count == 2);
+    assert(count_frames(out.str(), yllama::kFrameReady) == 1);
+    assert(count_frames(out.str(), yllama::kFrameCompleted) == 2);
+  }
+  {
+    EchoBackend backend;
+    std::istringstream in(generate("fail") + generate("after"));
+    std::ostringstream out, err;
+    assert(yllama::run_stdio(in, out, err, config, backend) == 0);
     assert(backend.generate_count == 2);
-    assert(out.str() == chunk_frame("echo:") + chunk_frame("one") +
-                            done_frame() + chunk_frame("echo:") +
-                            chunk_frame("two") + done_frame());
+    assert(count_frames(out.str(), yllama::kFrameError) == 1);
   }
-
-  {
-    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
-    std::istringstream in(v2_generate("fail")+v2_generate("after"));std::ostringstream out,err;
-    assert(yllama::run_stdio(in,out,err,v2,options,backend)==0);
-    assert(backend.generate_count==2);
-  }
-
-  {
-    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
-    std::istringstream in(v2_generate("fatal")+v2_generate("after"));std::ostringstream out,err;
-    assert(yllama::run_stdio(in,out,err,v2,options,backend)==1);
-    assert(backend.generate_count==1);
-  }
-
-  {
-    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
-    std::string oversized("\x01",1);oversized+=u32_le(yllama::kMaxFrameBytes+1);oversized+=v2_generate("after");
-    std::istringstream in(oversized);std::ostringstream out,err;
-    assert(yllama::run_stdio(in,out,err,v2,options,backend)==1);
-    assert(backend.generate_count==0);
-  }
-
-  {
-    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
-    std::istringstream in(v2_generate("cancel me")+std::string("\x02\x00\x00\x00\x00",5)+v2_generate("after"));std::ostringstream out,err;
-    assert(yllama::run_stdio(in,out,err,v2,options,backend)==0);assert(backend.configure_count==1);assert(backend.generate_count==2);
-    std::size_t pos=0,completed=0;bool saw_cancelled=false;const auto& bytes=out.str();
-    while(pos+5<=bytes.size()){const auto type=static_cast<unsigned char>(bytes[pos]);const auto len=static_cast<unsigned char>(bytes[pos+1])|(static_cast<unsigned char>(bytes[pos+2])<<8)|(static_cast<unsigned char>(bytes[pos+3])<<16)|(static_cast<unsigned char>(bytes[pos+4])<<24);assert(pos+5+len<=bytes.size());if(type==yllama::kFrameCompleted){++completed;if(static_cast<unsigned char>(bytes[pos+5])==3)saw_cancelled=true;}pos+=5+len;}
-    assert(completed==2);assert(saw_cancelled);
-  }
-
-  {
-    EchoBackend backend; yllama::RunnerConfig v2=config;v2.protocol=2;v2.runner_version="26.07.16.01-Release";
-    std::istringstream in(v2_generate("one")+v2_shutdown());std::ostringstream out,err;
-    assert(yllama::run_stdio(in,out,err,v2,options,backend)==0);assert(backend.configure_count==1);assert(backend.generate_count==1);
-    const std::string bytes=out.str();assert(static_cast<unsigned char>(bytes[0])==yllama::kFrameReady);
-    assert(bytes.find(std::string(1,static_cast<char>(yllama::kFrameCompleted)))!=std::string::npos);
-  }
-
   {
     EchoBackend backend;
-    std::istringstream in(prompt_frame("fail"));
-    std::ostringstream out;
-    std::ostringstream err;
-
-    const int status =
-        yllama::run_stdio(in, out, err, config, options, backend);
-    assert(status == 0);
-    assert(err.str().empty());
-    assert(out.str() == error_frame("invalid_prompt: prompt rejected"));
+    std::istringstream in(generate("fatal") + generate("after"));
+    std::ostringstream out, err;
+    assert(yllama::run_stdio(in, out, err, config, backend) == 1);
+    assert(backend.generate_count == 1);
   }
-
   {
     EchoBackend backend;
-    std::istringstream in(std::string("\x03\x00", 2));
-    std::ostringstream out;
-    std::ostringstream err;
-
-    const int status =
-        yllama::run_stdio(in, out, err, config, options, backend);
-    assert(status == 1);
-    assert(out.str().empty());
-    assert(err.str() == "truncated prompt length\n");
+    backend.configure_error = yllama::BackendError{"model_load_failed", "bad model"};
+    std::istringstream in;
+    std::ostringstream out, err;
+    assert(yllama::run_stdio(in, out, err, config, backend) == 1);
+    assert(count_frames(out.str(), yllama::kFrameError) == 1);
+    assert(count_frames(out.str(), yllama::kFrameReady) == 0);
   }
-
+  {
+    EchoBackend backend;
+    std::string oversized(1, static_cast<char>(yllama::kMessageGenerate));
+    oversized += u32(yllama::kMaxFrameBytes + 1);
+    std::istringstream in(oversized);
+    std::ostringstream out, err;
+    assert(yllama::run_stdio(in, out, err, config, backend) == 1);
+    assert(backend.generate_count == 0);
+  }
   return 0;
 }

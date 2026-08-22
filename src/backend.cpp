@@ -9,12 +9,9 @@ namespace {
 
 class FakeBackend final : public Backend {
  public:
-  ConfigureResult configure(const RunnerConfig& config) override {
-    model_path_ = config.model_path;
-    context_tokens_ = config.context_tokens;
-    threads_ = config.threads;
+  std::optional<BackendError> configure(const RunnerConfig&) override {
     configured_ = true;
-    return ConfigureResult{std::nullopt, model_path_, context_tokens_};
+    return std::nullopt;
   }
 
   GenerateResult generate(std::string_view,
@@ -40,9 +37,6 @@ class FakeBackend final : public Backend {
 
  private:
   bool configured_ = false;
-  std::string model_path_;
-  int context_tokens_ = 0;
-  int threads_ = 0;
 };
 
 }  // namespace

@@ -51,55 +51,13 @@ cmake --install build-beta-macos
 "$PREFIX/libexec/yllama-runner" --version
 ```
 
-## Manual Framed Generate Check
+## Inference and cancellation checks
 
-Run one framed request through the installed runner:
-
-```sh
-RUNNER="$PREFIX/libexec/yllama-runner"
-
-python3 - "$RUNNER" "$MODEL" <<'PY'
-import struct
-import subprocess
-import sys
-
-runner, model = sys.argv[1], sys.argv[2]
-prompt = b"Complete this sentence in four words: The sky is"
-proc = subprocess.Popen(
-    [runner, "--model", model, "--ctx", "1024", "--threads", "4",
-     "--max-tokens", "8", "--temperature", "0"],
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-)
-proc.stdin.write(struct.pack("<I", len(prompt)) + prompt)
-proc.stdin.close()
-
-while True:
-    tag = proc.stdout.read(1)
-    if tag == b"\x01":
-        size = struct.unpack("<I", proc.stdout.read(4))[0]
-        sys.stdout.buffer.write(proc.stdout.read(size))
-    elif tag == b"\x02":
-        break
-    elif tag == b"\x03":
-        size = struct.unpack("<H", proc.stdout.read(2))[0]
-        raise SystemExit(proc.stdout.read(size).decode())
-    else:
-        raise SystemExit(f"unexpected frame tag: {tag!r}")
-
-status = proc.wait()
-if status:
-    raise SystemExit(proc.stderr.read().decode())
-PY
-```
-
-Expected stdout is generated model text. stderr is diagnostics only.
-
-## Cancellation Check
-
-There is no in-band cancel command. Parent processes cancel by terminating the
-runner process and starting a fresh resident runner when needed.
+Configure with `YLLAMA_ENABLE_LLAMA_SMOKE_TEST=ON` as described in
+[build.md](build.md), then run `ctest --test-dir build-beta-macos
+--output-on-failure`. The smoke test verifies deterministic generation,
+streaming UTF-8, cancellation, and a subsequent request in the same resident
+process. The wire layout is documented in [runner-protocol.md](runner-protocol.md).
 
 ## Reporting Failures
 

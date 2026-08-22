@@ -121,10 +121,6 @@ if(YLLAMA_BUILD_TESTS)
   set_tests_properties(yllama-runner-build-info PROPERTIES
     PASS_REGULAR_EXPRESSION "llama.cpp-revision: ${YLLAMA_LLAMA_CPP_REVISION}")
 
-  add_test(NAME unsupported-protocol COMMAND yllama-runner --protocol 99
-    --model /must/not/be/loaded.gguf --ctx 32 --threads 1)
-  set_tests_properties(unsupported-protocol PROPERTIES WILL_FAIL TRUE)
-
   find_program(PYTHON3_FOR_CONTRACT_TESTS python3)
   if(NOT PYTHON3_FOR_CONTRACT_TESTS)
     message(FATAL_ERROR "Protocol contract tests require python3")

@@ -11,11 +11,11 @@ fixture = sys.argv[1]
 def envelope(kind, payload=b""):
     return bytes([kind]) + struct.pack("<I", len(payload)) + payload
 
-def generate(prompt, flags=0):
+def generate(prompt, mode=0):
     encoded = prompt.encode()
-    payload = struct.pack("<BBHI", 0, flags, 0, 64)
+    payload = struct.pack("<BBI", mode, 0, 64)
     payload += struct.pack("<ddidddQ", 0, 1, 0, 0, 0, 1, 1)
-    payload += struct.pack("<I", len(encoded)) + encoded
+    payload += encoded
     return envelope(1, payload)
 
 def read_exact(stream, length, timeout=5):
@@ -93,9 +93,9 @@ kind, _ = read_frame(proc)
 assert kind == 0x03
 assert reap(proc, expect_nonzero=True) == b""
 
-# Unknown and malformed complete messages are recoverable.
+# Unknown messages and invalid requests are recoverable.
 proc = start()
-proc.stdin.write(envelope(0x7f, b"unknown") + generate("bad", flags=1) + generate("ok"))
+proc.stdin.write(envelope(0x7f, b"unknown") + generate("bad", mode=2) + generate("ok"))
 proc.stdin.flush()
 assert read_frame(proc)[0] == 0x03
 assert read_frame(proc)[0] == 0x03
@@ -103,7 +103,7 @@ while True:
     kind, _ = read_frame(proc)
     if kind == 0x04: break
     assert kind == 0x01
-proc.stdin.write(envelope(3)); proc.stdin.flush(); proc.stdin.close()
+proc.stdin.close()
 reap(proc)
 
 # Active cancellation completes once and the same process handles a successor.
@@ -120,19 +120,14 @@ while True:
 assert proc.poll() is None and proc.pid == pid
 proc.stdin.write(generate("after")); proc.stdin.flush()
 while read_frame(proc)[0] != 0x04: pass
-proc.stdin.write(envelope(3)); proc.stdin.flush(); proc.stdin.close()
+proc.stdin.close()
 reap(proc)
 
-# Shutdown during generation cancels active work and exits cleanly.
+# Idle Cancel is a harmless no-op and cannot pollute the next response.
 proc = start()
-proc.stdin.write(generate("slow")); proc.stdin.flush()
-assert read_frame(proc)[0] == 0x01
-proc.stdin.write(envelope(3)); proc.stdin.flush()
-while True:
-    kind, payload = read_frame(proc)
-    if kind == 0x04:
-        assert payload[0] == 3
-        break
+proc.stdin.write(envelope(2) + generate("after")); proc.stdin.flush()
+while read_frame(proc)[0] != 0x04: pass
+proc.stdin.close()
 reap(proc)
 
 # Closing stdout cannot leave the runner waiting on still-open stdin.

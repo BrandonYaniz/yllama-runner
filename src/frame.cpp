@@ -1,73 +1,249 @@
 #include "frame.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 #include <istream>
-#include <limits>
 #include <ostream>
 #include <utility>
 
-namespace yllama { namespace {
-bool read_exact(std::istream& in, char* p, std::size_t n) {
-  in.read(p, static_cast<std::streamsize>(n));
-  return static_cast<std::size_t>(in.gcount()) == n;
+namespace yllama {
+namespace {
+
+bool read_exact(std::istream& in, char* data, std::size_t size) {
+  in.read(data, static_cast<std::streamsize>(size));
+  return static_cast<std::size_t>(in.gcount()) == size;
 }
-bool write_exact(std::ostream& out, const char* p, std::size_t n) {
-  out.write(p, static_cast<std::streamsize>(n)); return static_cast<bool>(out);
+
+std::uint32_t read_u32(const char* data) {
+  return static_cast<std::uint32_t>(static_cast<unsigned char>(data[0]) |
+      (static_cast<unsigned char>(data[1]) << 8) |
+      (static_cast<unsigned char>(data[2]) << 16) |
+      (static_cast<unsigned char>(data[3]) << 24));
 }
-std::uint16_t u16(const char* p) { return static_cast<std::uint16_t>(static_cast<unsigned char>(p[0]) | (static_cast<unsigned char>(p[1]) << 8)); }
-std::uint32_t u32(const char* p) { return static_cast<std::uint32_t>(static_cast<unsigned char>(p[0]) | (static_cast<unsigned char>(p[1]) << 8) | (static_cast<unsigned char>(p[2]) << 16) | (static_cast<unsigned char>(p[3]) << 24)); }
-std::uint64_t u64(const char* p) { std::uint64_t v=0; for(int i=7;i>=0;--i) v=(v<<8)|static_cast<unsigned char>(p[i]); return v; }
-double f64(const char* p) { const auto bits=u64(p); double v; std::memcpy(&v,&bits,8); return v; }
-void put16(std::string& s, std::uint16_t v) { s.push_back(static_cast<char>(v)); s.push_back(static_cast<char>(v>>8)); }
-void put32(std::string& s, std::uint32_t v) { for(int i=0;i<4;++i)s.push_back(static_cast<char>(v>>(8*i))); }
-void put64(std::string& s, std::uint64_t v) { for(int i=0;i<8;++i)s.push_back(static_cast<char>(v>>(8*i))); }
-bool envelope(std::ostream& out, std::uint8_t type, std::string_view payload) {
-  if(payload.size()>kMaxFrameBytes)return false; std::string h; h.push_back(static_cast<char>(type)); put32(h,static_cast<std::uint32_t>(payload.size()));
-  return write_exact(out,h.data(),h.size())&&write_exact(out,payload.data(),payload.size());
+
+std::uint64_t read_u64(const char* data) {
+  std::uint64_t value = 0;
+  for (int i = 7; i >= 0; --i) {
+    value = (value << 8) | static_cast<unsigned char>(data[i]);
+  }
+  return value;
 }
-struct Cursor { const std::string& s; std::size_t p=0;
-  bool take(std::size_t n,const char*& q){if(n>s.size()-p)return false;q=s.data()+p;p+=n;return true;}
-  bool byte(std::uint8_t& v){const char*q;if(!take(1,q))return false;v=static_cast<unsigned char>(*q);return true;}
-  bool word(std::uint16_t& v){const char*q;if(!take(2,q))return false;v=u16(q);return true;}
-  bool dword(std::uint32_t& v){const char*q;if(!take(4,q))return false;v=u32(q);return true;}
-  bool qword(std::uint64_t& v){const char*q;if(!take(8,q))return false;v=u64(q);return true;}
-  bool real(double& v){const char*q;if(!take(8,q))return false;v=f64(q);return true;}
-  bool str(std::uint32_t n,std::string& v){const char*q;if(!take(n,q))return false;v.assign(q,n);return true;}
+
+double read_f64(const char* data) {
+  const auto bits = read_u64(data);
+  double value;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+
+void append_u16(std::string& out, std::uint16_t value) {
+  out.push_back(static_cast<char>(value));
+  out.push_back(static_cast<char>(value >> 8));
+}
+
+void append_u32(std::string& out, std::uint32_t value) {
+  for (int i = 0; i < 4; ++i) {
+    out.push_back(static_cast<char>(value >> (8 * i)));
+  }
+}
+
+bool write_envelope(std::ostream& out, std::uint8_t type,
+                    std::string_view payload) {
+  if (payload.size() > kMaxFrameBytes) return false;
+  std::array<char, 5> header{};
+  header[0] = static_cast<char>(type);
+  const auto size = static_cast<std::uint32_t>(payload.size());
+  for (int i = 0; i < 4; ++i) header[i + 1] = static_cast<char>(size >> (8 * i));
+  out.write(header.data(), header.size());
+  out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+  return static_cast<bool>(out);
+}
+
+struct Cursor {
+  const std::string& data;
+  std::size_t offset = 0;
+
+  bool take(std::size_t size, const char*& value) {
+    if (size > data.size() - offset) return false;
+    value = data.data() + offset;
+    offset += size;
+    return true;
+  }
+  bool byte(std::uint8_t& value) {
+    const char* data;
+    if (!take(1, data)) return false;
+    value = static_cast<unsigned char>(*data);
+    return true;
+  }
+  bool u32(std::uint32_t& value) {
+    const char* data;
+    if (!take(4, data)) return false;
+    value = read_u32(data);
+    return true;
+  }
+  bool u64(std::uint64_t& value) {
+    const char* data;
+    if (!take(8, data)) return false;
+    value = read_u64(data);
+    return true;
+  }
+  bool f64(double& value) {
+    const char* data;
+    if (!take(8, data)) return false;
+    value = read_f64(data);
+    return true;
+  }
+  bool string(std::size_t size, std::string& value) {
+    const char* data;
+    if (!take(size, data)) return false;
+    value.assign(data, size);
+    return true;
+  }
 };
-InputMessage recoverable(std::string code,std::string msg){InputMessage m;m.status=InputStatus::RecoverableError;m.error={std::move(code),std::move(msg)};return m;}
-InputMessage fatal(std::string code,std::string msg){InputMessage m;m.status=InputStatus::FatalFramingError;m.error={std::move(code),std::move(msg),ErrorDisposition::Fatal};return m;}
-bool valid_utf8(std::string_view s){std::size_t i=0;while(i<s.size()){unsigned char c=s[i];std::size_t n;if(c<0x80)n=1;else if(c>=0xC2&&c<=0xDF)n=2;else if(c>=0xE0&&c<=0xEF)n=3;else if(c>=0xF0&&c<=0xF4)n=4;else return false;if(i+n>s.size())return false;for(std::size_t j=1;j<n;++j)if((static_cast<unsigned char>(s[i+j])&0xC0)!=0x80)return false;if(n==3&&((c==0xE0&&static_cast<unsigned char>(s[i+1])<0xA0)||(c==0xED&&static_cast<unsigned char>(s[i+1])>=0xA0)))return false;if(n==4&&((c==0xF0&&static_cast<unsigned char>(s[i+1])<0x90)||(c==0xF4&&static_cast<unsigned char>(s[i+1])>=0x90)))return false;i+=n;}return true;}
+
+InputMessage recoverable(std::string code, std::string message) {
+  InputMessage result;
+  result.status = InputStatus::RecoverableError;
+  result.error = {std::move(code), std::move(message)};
+  return result;
+}
+
+InputMessage fatal(std::string code, std::string message) {
+  InputMessage result;
+  result.status = InputStatus::FatalFramingError;
+  result.error = {std::move(code), std::move(message), ErrorDisposition::Fatal};
+  return result;
+}
+
+bool valid_utf8(std::string_view text) {
+  std::size_t i = 0;
+  while (i < text.size()) {
+    const auto c = static_cast<unsigned char>(text[i]);
+    std::size_t size;
+    if (c < 0x80) size = 1;
+    else if (c >= 0xC2 && c <= 0xDF) size = 2;
+    else if (c >= 0xE0 && c <= 0xEF) size = 3;
+    else if (c >= 0xF0 && c <= 0xF4) size = 4;
+    else return false;
+    if (i + size > text.size()) return false;
+    for (std::size_t j = 1; j < size; ++j) {
+      if ((static_cast<unsigned char>(text[i + j]) & 0xC0) != 0x80) return false;
+    }
+    if (size == 3 && ((c == 0xE0 && static_cast<unsigned char>(text[i + 1]) < 0xA0) ||
+                      (c == 0xED && static_cast<unsigned char>(text[i + 1]) >= 0xA0))) return false;
+    if (size == 4 && ((c == 0xF0 && static_cast<unsigned char>(text[i + 1]) < 0x90) ||
+                      (c == 0xF4 && static_cast<unsigned char>(text[i + 1]) >= 0x90))) return false;
+    i += size;
+  }
+  return true;
+}
+
 }  // namespace
 
-PromptFrame read_prompt_frame(std::istream& in) {
-  std::array<char,4>b{}; in.read(b.data(),4); if(in.gcount()==0&&in.eof())return{ReadFrameStatus::Eof,{},{}};
-  if(in.gcount()!=4)return{ReadFrameStatus::Invalid,{},"truncated prompt length"}; const auto n=u32(b.data());
-  if(n>kMaxPromptBytes)return{ReadFrameStatus::Invalid,{},"prompt frame too large"}; std::string p(n,'\0');
-  if(n&&!read_exact(in,p.data(),n))return{ReadFrameStatus::Invalid,{},"truncated prompt payload"}; return{ReadFrameStatus::Ok,std::move(p),{}};
+InputMessage read_message(std::istream& in) {
+  std::array<char, 5> header{};
+  in.read(header.data(), header.size());
+  if (in.gcount() == 0 && in.eof()) {
+    InputMessage result;
+    result.status = InputStatus::Eof;
+    return result;
+  }
+  if (in.gcount() != static_cast<std::streamsize>(header.size())) {
+    return fatal("malformed_frame", "truncated message envelope");
+  }
+  const auto type = static_cast<std::uint8_t>(header[0]);
+  const auto size = read_u32(header.data() + 1);
+  if (size > kMaxFrameBytes) {
+    return fatal("frame_too_large", "payload exceeds 32 MiB limit");
+  }
+  std::string payload(size, '\0');
+  if (size && !read_exact(in, payload.data(), size)) {
+    return fatal("malformed_frame", "truncated message payload");
+  }
+
+  InputMessage result;
+  result.type = type;
+  if (type == kMessageCancel) {
+    if (size) return recoverable("malformed_message", "Cancel payload must be empty");
+    result.status = InputStatus::Ok;
+    return result;
+  }
+  if (type != kMessageGenerate) {
+    return recoverable("unknown_message_type", "unknown input message type");
+  }
+
+  Cursor cursor{payload};
+  std::uint8_t mode;
+  std::uint8_t stop_count;
+  auto& options = result.generate.options;
+  std::uint32_t top_k;
+  if (!cursor.byte(mode) || !cursor.byte(stop_count) ||
+      !cursor.u32(options.max_tokens) || !cursor.f64(options.temperature) ||
+      !cursor.f64(options.top_p) || !cursor.u32(top_k) ||
+      !cursor.f64(options.min_p) || !cursor.f64(options.presence_penalty) ||
+      !cursor.f64(options.repeat_penalty) || !cursor.u64(options.seed)) {
+    return recoverable("malformed_generate", "truncated Generate settings");
+  }
+  if (mode > 1) {
+    return recoverable("invalid_tokenization_mode", "tokenization mode must be 0 or 1");
+  }
+  if (stop_count > kMaxStopCount) {
+    return recoverable("too_many_stops", "stop count exceeds 64");
+  }
+  options.tokenization_mode = static_cast<TokenizationMode>(mode);
+  options.top_k = static_cast<std::int32_t>(top_k);
+
+  std::size_t total_stop_bytes = 0;
+  for (std::uint8_t i = 0; i < stop_count; ++i) {
+    std::uint32_t length;
+    if (!cursor.u32(length) || length > kMaxStopBytes ||
+        total_stop_bytes + length > kMaxStopBytes) {
+      return recoverable("invalid_stop_sequence", "stop strings exceed 64 KiB limit");
+    }
+    std::string stop;
+    if (!cursor.string(length, stop) || stop.empty() || !valid_utf8(stop)) {
+      return recoverable("invalid_stop_sequence", "stop strings must be nonempty UTF-8");
+    }
+    total_stop_bytes += length;
+    options.stop_sequences.push_back(std::move(stop));
+  }
+
+  const auto prompt_size = payload.size() - cursor.offset;
+  if (prompt_size > kMaxPromptBytes) {
+    return recoverable("prompt_too_large", "prompt exceeds 16 MiB limit");
+  }
+  if (!cursor.string(prompt_size, result.generate.prompt) ||
+      !valid_utf8(result.generate.prompt)) {
+    return recoverable("invalid_prompt_utf8", "prompt must be valid UTF-8");
+  }
+  result.status = InputStatus::Ok;
+  return result;
 }
 
-InputMessage read_v2_message(std::istream& in) {
-  std::array<char,5>h{}; in.read(h.data(),5); if(in.gcount()==0&&in.eof()){InputMessage m;m.status=InputStatus::Eof;return m;}
-  if(in.gcount()!=5)return fatal("malformed_frame","truncated message envelope"); const std::uint8_t type=static_cast<unsigned char>(h[0]); const auto n=u32(h.data()+1);
-  if(n>kMaxFrameBytes)return fatal("frame_too_large","payload exceeds 32 MiB limit"); std::string p(n,'\0');
-  if(n&&!read_exact(in,p.data(),n))return fatal("malformed_frame","truncated message payload"); InputMessage m;m.type=type;
-  if(type==kMessageCancel||type==kMessageShutdown){if(n)return recoverable("malformed_message","Cancel and Shutdown payloads must be empty");m.status=InputStatus::Ok;return m;}
-  if(type!=kMessageGenerate)return recoverable("unknown_message_type","unknown input message type"); Cursor c{p};std::uint8_t mode,flags;std::uint16_t stops;std::uint32_t max;
-  if(!c.byte(mode)||!c.byte(flags)||!c.word(stops)||!c.dword(max))return recoverable("malformed_generate","truncated Generate settings");
-  if(flags!=0)return recoverable("invalid_reserved","Generate reserved flags must be zero"); if(mode>1)return recoverable("invalid_tokenization_mode","tokenization_mode must be 0 or 1"); if(stops>kMaxStopCount)return recoverable("too_many_stops","stop_count exceeds 64");
-  auto&o=m.generate.options;o.tokenization_mode=static_cast<TokenizationMode>(mode);o.max_tokens=max;std::uint32_t topk;
-  if(!c.real(o.temperature)||!c.real(o.top_p)||!c.dword(topk)||!c.real(o.min_p)||!c.real(o.presence_penalty)||!c.real(o.repeat_penalty)||!c.qword(o.seed))return recoverable("malformed_generate","truncated Generate sampling settings");o.top_k=static_cast<std::int32_t>(topk);
-  std::size_t total_stop=0;for(std::uint16_t i=0;i<stops;++i){std::uint32_t len;if(!c.dword(len)||len>kMaxStopBytes||total_stop+len>kMaxStopBytes)return recoverable("invalid_stop_sequence","stop strings exceed 64 KiB aggregate limit");std::string s;if(!c.str(len,s)||s.empty()||!valid_utf8(s))return recoverable("invalid_stop_sequence","stop strings must be nonempty valid UTF-8");total_stop+=len;o.stop_sequences.push_back(std::move(s));}
-  std::uint32_t plen;if(!c.dword(plen)||plen>kMaxPromptBytes||!c.str(plen,m.generate.prompt)||c.p!=p.size())return recoverable("malformed_generate","invalid prompt length or trailing bytes");if(!valid_utf8(m.generate.prompt))return recoverable("invalid_prompt_utf8","prompt must be valid UTF-8");m.status=InputStatus::Ok;return m;
+bool write_ready(std::ostream& out) {
+  return write_envelope(out, kFrameReady, {});
 }
 
-bool write_chunk_frame(std::ostream& out,std::string_view t){if(t.size()>kMaxFrameBytes)return false;char tag=kFrameChunk;std::string n;put32(n,static_cast<std::uint32_t>(t.size()));return write_exact(out,&tag,1)&&write_exact(out,n.data(),4)&&write_exact(out,t.data(),t.size());}
-bool write_done_frame(std::ostream& out){char t=kFrameDoneV1;return write_exact(out,&t,1);}
-bool write_error_frame(std::ostream& out,std::string_view m){char t=kFrameError;const auto n=static_cast<std::uint16_t>(std::min<std::size_t>(m.size(),65535));std::string h;put16(h,n);return write_exact(out,&t,1)&&write_exact(out,h.data(),2)&&write_exact(out,m.data(),n);}
-bool write_v2_chunk(std::ostream& out,std::string_view t){std::string p;put32(p,static_cast<std::uint32_t>(t.size()));p.append(t);return envelope(out,kFrameChunk,p);}
-bool write_v2_error(std::ostream& out,std::string_view c,std::string_view m){c=c.substr(0,kMaxErrorCodeBytes);m=m.substr(0,kMaxErrorMessageBytes);std::string p;put16(p,static_cast<std::uint16_t>(c.size()));p.append(c);put16(p,static_cast<std::uint16_t>(m.size()));p.append(m);return envelope(out,kFrameError,p);}
-bool write_v2_completed(std::ostream& out,const GenerateResult&r){std::string p;p.push_back(static_cast<char>(r.finish_reason));put32(p,r.input_tokens);put32(p,r.output_tokens);put64(p,r.prompt_microseconds);put64(p,r.generation_microseconds);return envelope(out,kFrameCompleted,p);}
-bool write_v2_ready(std::ostream& out,std::uint16_t v,std::string_view rv,std::uint32_t ctx,std::uint64_t caps){if(rv.size()>65535)return false;std::string p;put16(p,v);put16(p,static_cast<std::uint16_t>(rv.size()));p.append(rv);put32(p,ctx);put64(p,caps);return envelope(out,kFrameReady,p);}
+bool write_chunk(std::ostream& out, std::string_view text) {
+  return write_envelope(out, kFrameChunk, text);
+}
+
+bool write_error(std::ostream& out, std::string_view code,
+                 std::string_view message) {
+  code = code.substr(0, kMaxErrorCodeBytes);
+  message = message.substr(0, kMaxErrorMessageBytes);
+  std::string payload;
+  append_u16(payload, static_cast<std::uint16_t>(code.size()));
+  payload.append(code);
+  payload.append(message);
+  return write_envelope(out, kFrameError, payload);
+}
+
+bool write_completed(std::ostream& out, const GenerateResult& result) {
+  std::string payload(1, static_cast<char>(result.finish_reason));
+  append_u32(payload, result.input_tokens);
+  append_u32(payload, result.output_tokens);
+  return write_envelope(out, kFrameCompleted, payload);
+}
+
 }  // namespace yllama

@@ -78,9 +78,7 @@ int main() {
     config.context_tokens = 8192;
     config.threads = 4;
     const auto result = backend->configure(config);
-    assert(!result.error.has_value());
-    assert(result.model_path == "/models/fast/model.gguf");
-    assert(result.context_tokens == 8192);
+    assert(!result.has_value());
   }
 
   {

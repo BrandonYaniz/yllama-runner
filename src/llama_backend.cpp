@@ -1,7 +1,6 @@
 #include "llama_backend.hpp"
 
 #include <cstdint>
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -67,10 +66,8 @@ struct LlamaSamplerDeleter {
 
 using SamplerPtr = std::unique_ptr<llama_sampler, LlamaSamplerDeleter>;
 
-ConfigureResult configure_error(std::string code, std::string message) {
-  ConfigureResult result;
-  result.error = BackendError{std::move(code), std::move(message)};
-  return result;
+std::optional<BackendError> configure_error(std::string code, std::string message) {
+  return BackendError{std::move(code), std::move(message)};
 }
 
 GenerateResult generate_error(std::string code, std::string message,
@@ -163,7 +160,7 @@ class LlamaBackend final : public Backend {
     static_cast<void>(runtime());
   }
 
-  ConfigureResult configure(const RunnerConfig& config) override {
+  std::optional<BackendError> configure(const RunnerConfig& config) override {
     if (config.context_tokens <= 0) {
       return configure_error("invalid_config",
                              "context_tokens must be greater than zero.");
@@ -201,9 +198,8 @@ class LlamaBackend final : public Backend {
 
     model_ = std::move(next_model);
     context_ = std::move(next_context);
-    model_path_ = config.model_path;
     context_tokens_ = static_cast<int>(llama_n_ctx(context_.get()));
-    return ConfigureResult{std::nullopt, model_path_, context_tokens_};
+    return std::nullopt;
   }
 
   GenerateResult generate(std::string_view prompt,
@@ -246,8 +242,6 @@ class LlamaBackend final : public Backend {
         llama_batch_get_one(prompt_tokens->data(), prompt_tokens->size());
     GenerateResult result;
     result.input_tokens = static_cast<std::uint32_t>(prompt_tokens->size());
-    const auto prompt_started = std::chrono::steady_clock::now();
-    auto generation_started = prompt_started;
     int n_pos = 0;
     int output_tokens = 0;
 
@@ -263,13 +257,6 @@ class LlamaBackend final : public Backend {
                               ErrorDisposition::Fatal);
       }
       n_pos += batch.n_tokens;
-      if (output_tokens == 0) {
-        generation_started = std::chrono::steady_clock::now();
-        result.prompt_microseconds = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                generation_started - prompt_started).count());
-      }
-
       if (is_cancelled()) {
         result.finish_reason = FinishReason::Cancelled;
         break;
@@ -302,17 +289,12 @@ class LlamaBackend final : public Backend {
          n_pos + batch.n_tokens >= context_tokens_)) {
       result.finish_reason = FinishReason::Length;
     }
-    const auto ended = std::chrono::steady_clock::now();
-    result.generation_microseconds = static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            ended - generation_started).count());
     return result;
   }
 
  private:
   ModelPtr model_;
   ContextPtr context_;
-  std::string model_path_;
   int context_tokens_ = 0;
 };
 

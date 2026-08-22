@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Process-safe, catalog-exact protocol-2 release qualification."""
+"""Process-safe, catalog-exact runner release qualification."""
 import argparse
 import hashlib
 import json
@@ -23,10 +23,10 @@ def frame(kind, payload=b""):
     return bytes([kind]) + struct.pack("<I", len(payload)) + payload
 
 def generate(prompt, seed=1, max_tokens=32):
-    payload = struct.pack("<BBHI", 1, 0, 0, max_tokens)
+    payload = struct.pack("<BBI", 1, 0, max_tokens)
     payload += struct.pack("<ddidddQ", 0.0, 1.0, 0, 0.0, 0.0, 1.0, seed)
     encoded = prompt.encode("utf-8")
-    return frame(1, payload + struct.pack("<I", len(encoded)) + encoded)
+    return frame(1, payload + encoded)
 
 class FrameReader:
     def __init__(self, stream):
@@ -85,9 +85,9 @@ def send(proc, data):
     proc.stdin.flush()
 
 def completed_payload(payload):
-    if len(payload) != 25:
+    if len(payload) != 9:
         raise RuntimeError("invalid Completed length")
-    return struct.unpack("<BIIQQ", payload)
+    return struct.unpack("<BII", payload)
 
 def request(proc, reader, prompt, timeout=REQUEST_TIMEOUT):
     send(proc, generate(prompt))
@@ -96,15 +96,11 @@ def request(proc, reader, prompt, timeout=REQUEST_TIMEOUT):
     while True:
         kind, payload = reader.frame(max(0.001, deadline - time.monotonic()))
         if kind == 1:
-            length = struct.unpack_from("<I", payload)[0]
-            chunk = payload[4:]
-            if length != len(chunk):
-                raise RuntimeError("bad Chunk length")
-            chunk.decode("utf-8")
-            chunks.append(chunk)
+            payload.decode("utf-8")
+            chunks.append(payload)
         elif kind == 4:
             terminals += 1
-            reason, input_tokens, output_tokens, _, _ = completed_payload(payload)
+            reason, input_tokens, output_tokens = completed_payload(payload)
             if terminals != 1 or reason not in (0, 1, 2):
                 raise RuntimeError("invalid terminal completion")
             if input_tokens <= 0 or output_tokens <= 0 or not b"".join(chunks):
@@ -123,17 +119,13 @@ def cancel_after_chunk(proc, reader, prompt):
     while True:
         kind, payload = reader.frame(max(0.001, deadline - time.monotonic()))
         if kind == 1:
-            length = struct.unpack_from("<I", payload)[0]
-            chunk = payload[4:]
-            if length != len(chunk):
-                raise RuntimeError("bad cancellation Chunk length")
-            chunk.decode("utf-8")
+            payload.decode("utf-8")
             if not sent_cancel:
                 send(proc, frame(2))
                 sent_cancel = True
         elif kind == 4:
             terminals += 1
-            reason, _, _, _, _ = completed_payload(payload)
+            reason, _, _ = completed_payload(payload)
             if not sent_cancel:
                 raise RuntimeError("generation completed before cancellation")
             if terminals != 1 or reason != 3:
@@ -147,7 +139,6 @@ def stop_process(proc, graceful=False):
         return
     if proc.poll() is None and graceful:
         try:
-            send(proc, frame(3))
             proc.stdin.close()
             proc.wait(timeout=SHUTDOWN_TIMEOUT)
         except Exception:
@@ -192,7 +183,7 @@ def main():
     results = []
     for index, model in enumerate(manifest["models"]):
         path = os.environ.get(model["env"])
-        command = [args.runner, "--protocol", "2", "--model", path or "<unset>", "--ctx", "2048", "--threads", str(os.cpu_count() or 1)]
+        command = [args.runner, "--model", path or "<unset>", "--ctx", "2048", "--threads", str(os.cpu_count() or 1)]
         record = {
             "model_family": model["family"], "catalog_variant_id": model["catalog_variant_id"],
             "expected_filename": model["expected_filename"], "expected_size_bytes": model["expected_size_bytes"],
@@ -207,7 +198,7 @@ def main():
             if not path:
                 raise RuntimeError("unset " + model["env"])
             record["artifact_sha256"] = verify_artifact(model, path)
-            command[4] = path
+            command[2] = path
             proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
             record["pid"] = proc.pid
             reader = FrameReader(proc.stdout)
@@ -227,7 +218,7 @@ def main():
             stop_process(proc, graceful=True)
             graceful = False
             if proc.returncode != 0:
-                raise RuntimeError("unclean Shutdown: " + str(proc.returncode))
+                raise RuntimeError("unclean shutdown: " + str(proc.returncode))
             record["passed"] = True
         except Exception as exc:
             record["failure_details"] = f"{type(exc).__name__}: {exc}; command={command!r}; build_info={build_info.strip()!r}"

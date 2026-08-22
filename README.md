@@ -20,7 +20,7 @@ This is useful for:
 ## Goals
 
 - Load one local GGUF model.
-- Accept protocol 1 or protocol 2 frames over stdio.
+- Accept bounded binary messages over stdio.
 - Stream generated text chunks as binary frames.
 - Keep the model resident across serial requests.
 - Exit cleanly on stdin EOF.
@@ -69,14 +69,13 @@ The runner uses llama.cpp as its production backend. Tests still use an internal
 
 ## Current status
 
-The runner loads one GGUF model, emits protocol 2 readiness, accepts sequential
-per-request generation settings, supports in-band cancellation and stop strings,
-and streams valid UTF-8 with structured completion metadata. Protocol 1 remains
-the default for migration compatibility; new yllmd versions pass `--protocol 2`.
+The runner loads one GGUF model, signals readiness, accepts sequential
+per-request generation settings, supports cancellation and stop strings, and
+streams valid UTF-8 with token counts and a completion reason.
 
-Process flags are `--model`, `--ctx`, `--threads`, `--gpu-layers` (default 0),
-and `--protocol`. See [the yllmd protocol 2 migration contract](docs/yllmd-protocol-v2-migration.md).
-`--build-info` reports the runner and dependency identity.
+Process flags are `--model`, `--ctx`, `--threads`, and `--gpu-layers` (default
+0). See [the runner protocol](docs/runner-protocol.md). `--build-info` reports
+the runner and dependency identity.
 
 Current limitations:
 
